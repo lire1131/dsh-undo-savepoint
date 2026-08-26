@@ -2,6 +2,12 @@
 
 dsh-undo-savepoint 的重要变更。日期为本地时间（UTC+8)。English version: [CHANGELOG.en.md](CHANGELOG.en.md)
 
+## [0.4.2] - 2026-08-26
+
+### 新增
+
+- **`undo_scan` 支持 synthetic-closer seq 重叠修复**：扫描改为逐帧解码（不再把整个日志 `Buffer.concat` 到内存，避免大文件出现 `Allocation error : not enough memory`），并识别「崩溃恢复写入的 `step/end`+`turn/end` 合成关闭帧之后，续跑会话又复用旧 seq」的损坏模式；`quarantine=true` / `dsh-undo.ps1 scan --fix` 时只删除该合成关闭帧即可让日志恢复连续，保留其后全部事件（原件留 `.bak` + 隔离区副本）。
+
 ## [0.4.1] - 2026-08-23
 
 ### 修复

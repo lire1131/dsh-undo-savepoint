@@ -12,7 +12,7 @@
 #   .\dsh-undo.ps1 prune [-KeepAuto 20]
 #   .\dsh-undo.ps1 status
 #   .\dsh-undo.ps1 settings                                   # show current settings
-#   .\dsh-undo.ps1 scan [--fix] [-Label <home>]               # scan/repair DSH session files (v0.3.8)
+#   .\dsh-undo.ps1 scan [--fix] [-Label <home>]               # scan/repair DSH session files (v0.3.8; v0.4.2 adds synthetic-closer seq overlap repair)
 #
 # Snapshot stores: D:\dsh\undo-snapshots\manual and \auto (shared with the
 # dsh-undo DSH plugin; legacy flat snapshots are read too).
@@ -198,7 +198,7 @@ switch ($Command) {
         }
     }
     'scan' {
-        # dsh-undo.ps1 scan [--fix] [-Label <home>]（v0.3.8, B6）
+        # dsh-undo.ps1 scan [--fix] [-Label <home>]（v0.3.8, B6；v0.4.2 增加 synthetic-closer seq 重叠修复）
         # 离线会话扫描/修复：DSH 起不来时也能用；--fix 通过 -Label 传入。
         $fix = $false
         $homeArg = $null
