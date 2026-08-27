@@ -2,11 +2,17 @@
 
 dsh-undo-savepoint 的重要变更。日期为本地时间（UTC+8)。English version: [CHANGELOG.en.md](CHANGELOG.en.md)
 
-## [0.4.2] - 2026-08-26
+## [0.4.2] - 2026-08-27
 
 ### 新增
 
 - **`undo_scan` 支持 synthetic-closer seq 重叠修复**：扫描改为逐帧解码（不再把整个日志 `Buffer.concat` 到内存，避免大文件出现 `Allocation error : not enough memory`），并识别「崩溃恢复写入的 `step/end`+`turn/end` 合成关闭帧之后，续跑会话又复用旧 seq」的损坏模式；`quarantine=true` / `dsh-undo.ps1 scan --fix` 时只删除该合成关闭帧即可让日志恢复连续，保留其后全部事件（原件留 `.bak` + 隔离区副本）。
+
+### 修复
+
+- **多重叠日志可一次修复**：多次崩溃恢复会留下多个 synthetic-closer 重叠帧，此前 `--fix` 每次只删第一个、重分析后仍 fixable、且抛错不写盘，形成永远修不完的死循环；现在循环删除所有匹配的重叠帧直到重分析通过（上限 1024 次），单次 `--fix` 完成修复（PR #14 后续修补）。
+- **无 seq 字段的合法行不再误判 corrupt**：合法 JSON 但不含 `seq`/`seq0` 的记录行（如心跳、未来格式扩展）此前被当作 `bad JSON line` 判 corrupt，与 v0.4.1 行为相比是回归；现在这类行计为合法事件、跳过 seq 连续性校验，真正的 seq 跳跃仍判 corrupt（PR #14 后续修补）。
+- **`engines.dsh` 声明修正**：`>=0.0.1` 按 semver 规则不匹配任何 prerelease 版本（如 0.1.0-rc.8 / 0.1.1-rc.2）；改为 `>=0.0.1-0 || >=0.1.0-rc.2 || >=0.1.1-rc.1`，精确覆盖已实测的三条 rc 线与全部正式版。已在 dsh-tools 0.1.1-rc.2 下跑通全量 smoke（208 项）。
 
 ## [0.4.1] - 2026-08-23
 

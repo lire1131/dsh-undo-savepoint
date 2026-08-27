@@ -2,11 +2,17 @@
 
 Notable changes to dsh-undo-savepoint. Dates are in local time (UTC+8). 中文版:[CHANGELOG.md](CHANGELOG.md)
 
-## [0.4.2] - 2026-08-26
+## [0.4.2] - 2026-08-27
 
 ### Added
 
 - **`undo_scan` synthetic-closer seq-overlap repair**: scanning now decodes frame-by-frame instead of concatenating the whole log into memory (avoids `Allocation error : not enough memory` on large files), and detects the "crash-recovery `step/end`+`turn/end` synthetic closers followed by a resumed session reusing the old seq" corruption pattern. With `quarantine=true` / `dsh-undo.ps1 scan --fix`, only that synthetic closer frame is removed, restoring a contiguous log and preserving all later events (original kept as `.bak` + quarantine copy).
+
+### Fixed
+
+- **Multi-overlap logs repair in one pass**: repeated crash recoveries can leave several synthetic-closer overlap frames; previously `--fix` removed only the first one, re-analysis stayed `fixable`, and the error aborted before writing — an endless loop that never repaired. The repair now loops, removing every matching overlap frame until re-analysis passes (1024-iteration safety cap), completing in a single `--fix` run (follow-up patch to PR #14).
+- **Valid lines without a seq field are no longer flagged corrupt**: records with valid JSON but no `seq`/`seq0` (e.g. heartbeats, future format extensions) were previously misjudged as `bad JSON line`, a regression vs v0.4.1; they now count as valid events that skip seq continuity checks, while genuine seq gaps are still flagged corrupt (follow-up patch to PR #14).
+- **`engines.dsh` declaration fixed**: `>=0.0.1` matches no prerelease version under semver rules (e.g. 0.1.0-rc.8 / 0.1.1-rc.2); it is now `>=0.0.1-0 || >=0.1.0-rc.2 || >=0.1.1-rc.1`, precisely covering the three verified rc lines and all stable releases. Full smoke suite (208 checks) passes against dsh-tools 0.1.1-rc.2.
 
 ## [0.4.1] - 2026-08-23
 

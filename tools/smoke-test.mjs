@@ -1200,7 +1200,7 @@ await mkdir(home30, { recursive: true }); await mkdir(profile30, { recursive: tr
 if (!hasZstd) {
   // Node < 22.15 无 zstd Zlib API：B6 用例跳过（不算失败），插件其余功能不受影响
   console.log('  skip - B6 zstd requires Node 22.15+; skipped on this Node (plugin degrades to undo_scan unsupported notice)');
-  pass += 16;
+  pass += 23;
   await cleanup(root30);
   await rm(root, { recursive: true, force: true });
   console.log(`\n== RESULT: ${pass} passed, ${fail} failed ==`);
@@ -1209,14 +1209,17 @@ if (!hasZstd) {
 await writeFile(join(home30, 'settings.yaml'), 'model: x\n');
 await writeFile(join(profile30, 'cordis.patch.yml'), '# patch\n[]\n');
 await writeFile(join(profile30, 'package.json'), '{"name":"test","v":1}\n');
-// 会话文件：sess-ok（合规双帧）/ sess-fix（单帧违规）/ sess-overlap（synthetic-closer seq 重叠）/ sess-bad（坏 magic）
+// 会话文件：sess-ok（合规双帧）/ sess-fix（单帧违规）/ sess-overlap（synthetic-closer seq 重叠）/
+// sess-dual（两次崩溃恢复的双重叠）/ sess-noseq（含无 seq 合法行）/ sess-bad（坏 magic）
 const hdr30 = JSON.stringify({ type: 'session', version: 1, id: 'sess1', createdAt: 1234567890, delegationDepth: 0 }) + '\n';
 const evt30 = JSON.stringify({ type: 'event', seq: 0, time: 1, data: { text: 'hello' } }) + '\n';
 const sessOk = join(home30, 'sessions', 'sess-ok');
 const sessFix = join(home30, 'sessions', 'sess-fix');
 const sessOverlap = join(home30, 'sessions', 'sess-overlap');
+const sessDual = join(home30, 'sessions', 'sess-dual');
+const sessNoseq = join(home30, 'sessions', 'sess-noseq');
 const sessBad = join(home30, 'sessions', 'sess-bad');
-await mkdir(sessOk, { recursive: true }); await mkdir(sessFix, { recursive: true }); await mkdir(sessOverlap, { recursive: true }); await mkdir(sessBad, { recursive: true });
+await mkdir(sessOk, { recursive: true }); await mkdir(sessFix, { recursive: true }); await mkdir(sessOverlap, { recursive: true }); await mkdir(sessDual, { recursive: true }); await mkdir(sessNoseq, { recursive: true }); await mkdir(sessBad, { recursive: true });
 await writeFile(join(sessOk, 'session.jsonl.zstd'), Buffer.concat([zlib.zstdCompressSync(Buffer.from(hdr30, 'utf8')), zlib.zstdCompressSync(Buffer.from(evt30, 'utf8'))]));
 const fixBytes = zlib.zstdCompressSync(Buffer.from(hdr30 + evt30, 'utf8')); // 单帧
 await writeFile(join(sessFix, 'session.jsonl.zstd'), fixBytes);
@@ -1235,6 +1238,43 @@ const overlapBytes = Buffer.concat([
   )),
 ]);
 await writeFile(join(sessOverlap, 'session.jsonl.zstd'), overlapBytes);
+// 双重叠：两次崩溃恢复各留一个 synthetic-closer（seq 1-2 重放后再现 seq 3-4 重叠）
+const dualBytes = Buffer.concat([
+  zlib.zstdCompressSync(Buffer.from(hdr30, 'utf8')),
+  zlib.zstdCompressSync(Buffer.from(JSON.stringify({ type: 'step/start', seq: 0, time: 1, data: { turn: 1, step: 1 } }) + '\n', 'utf8')),
+  zlib.zstdCompressSync(Buffer.from(
+    JSON.stringify({ type: 'step/end', seq: 1, time: 2, data: { turn: 1, step: 1 } }) + '\n'
+    + JSON.stringify({ type: 'turn/end', seq: 2, time: 2, data: { turn: 1, reason: { kind: 'interrupted' } } }) + '\n',
+    'utf8',
+  )),
+  zlib.zstdCompressSync(Buffer.from(
+    JSON.stringify({ type: 'assistant/chunk', seq: 1, time: 3, data: { turn: 1, step: 1, chunk: { type: 'text', text: 'a' } } }) + '\n'
+    + JSON.stringify({ type: 'turn/end', seq: 2, time: 4, data: { turn: 1, reason: { kind: 'completed' } } }) + '\n',
+    'utf8',
+  )),
+  zlib.zstdCompressSync(Buffer.from(
+    JSON.stringify({ type: 'step/end', seq: 3, time: 5, data: { turn: 1, step: 1 } }) + '\n'
+    + JSON.stringify({ type: 'turn/end', seq: 4, time: 5, data: { turn: 1, reason: { kind: 'interrupted' } } }) + '\n',
+    'utf8',
+  )),
+  zlib.zstdCompressSync(Buffer.from(
+    JSON.stringify({ type: 'assistant/chunk', seq: 3, time: 6, data: { turn: 1, step: 1, chunk: { type: 'text', text: 'b' } } }) + '\n'
+    + JSON.stringify({ type: 'turn/end', seq: 4, time: 7, data: { turn: 1, reason: { kind: 'completed' } } }) + '\n',
+    'utf8',
+  )),
+]);
+await writeFile(join(sessDual, 'session.jsonl.zstd'), dualBytes);
+// 无 seq 合法行：心跳类记录不带 seq/seq0，应判 ok 而非 bad JSON line
+const noseqBytes = Buffer.concat([
+  zlib.zstdCompressSync(Buffer.from(hdr30, 'utf8')),
+  zlib.zstdCompressSync(Buffer.from(
+    JSON.stringify({ type: 'event', seq: 0, time: 1, data: { text: 'a' } }) + '\n'
+    + JSON.stringify({ type: 'heartbeat', time: 2, level: 'info' }) + '\n'
+    + JSON.stringify({ type: 'event', seq: 1, time: 3, data: { text: 'b' } }) + '\n',
+    'utf8',
+  )),
+]);
+await writeFile(join(sessNoseq, 'session.jsonl.zstd'), noseqBytes);
 const badBytes = Buffer.from([0xde, 0xad, 0xbe, 0xef, 0x00, 0x01, 0x02]);
 await writeFile(join(sessBad, 'session.jsonl.zstd'), badBytes);
 const tools30 = new Map();
@@ -1247,27 +1287,34 @@ apply(ctx30, { manualDir: join(snap30, 'manual'), autoDir: join(snap30, 'auto'),
 await new Promise((r) => setTimeout(r, 350));
 const run30 = async (name, args) => (await tools30.get(name).execute(args, {}));
 const scan1 = await run30('undo_scan', {});
-check(scan1.includes('4 session file(s)'), 'B6: scan reports 4 files');
+check(scan1.includes('6 session file(s)'), 'B6: scan reports 6 files');
 check(scan1.includes('ok       ') && scan1.includes('sess-ok'), 'B6: compliant file marked ok');
 check(scan1.includes('fixable  ') && scan1.includes('sess-fix'), 'B6: single-frame file marked fixable');
 check(scan1.includes('fixable  ') && scan1.includes('sess-overlap') && scan1.includes('synthetic-closer overlap'), 'B6: synthetic-closer overlap file marked fixable');
+check(scan1.includes('fixable  ') && scan1.includes('sess-dual') && scan1.includes('synthetic-closer overlap'), 'B6: dual synthetic-closer overlap file marked fixable');
+check(scan1.includes('ok       ') && scan1.includes('sess-noseq'), 'B6: no-seq valid JSON lines file marked ok (not bad JSON)');
 check(scan1.includes('corrupt  ') && scan1.includes('sess-bad'), 'B6: bad-magic file marked corrupt');
-check(scan1.includes('summary: 1 ok, 0 fixed, 2 fixable, 0 isolated, 1 corrupt'), 'B6: read-only summary correct');
+check(scan1.includes('summary: 2 ok, 0 fixed, 3 fixable, 0 isolated, 1 corrupt'), 'B6: read-only summary correct');
 // quarantine 模式：修复 fixable（.bak + 隔离复制），corrupt 仅隔离
 const scan2 = await run30('undo_scan', { quarantine: true });
 check(scan2.includes('fixed    ') && scan2.includes('sess-fix'), 'B6: single-frame fixed in quarantine mode');
 check(scan2.includes('fixed    ') && scan2.includes('sess-overlap') && scan2.includes('synthetic-closer overlap'), 'B6: synthetic-closer overlap fixed in quarantine mode');
+check(scan2.includes('fixed    ') && scan2.includes('sess-dual'), 'B6: dual overlap repaired fully in one pass (looped closer removal)');
 check(scan2.includes('-> isolated'), 'B6: corrupt file isolated (not touched)');
 check(Buffer.compare(await readFile(join(sessFix, 'session.jsonl.zstd.bak')), fixBytes) === 0, 'B6: .bak of original kept');
 check(Buffer.compare(await readFile(join(sessOverlap, 'session.jsonl.zstd.bak')), overlapBytes) === 0, 'B6: .bak of overlap original kept');
+check(Buffer.compare(await readFile(join(sessDual, 'session.jsonl.zstd.bak')), dualBytes) === 0, 'B6: .bak of dual original kept');
+check(Buffer.compare(await readFile(join(sessNoseq, 'session.jsonl.zstd')), noseqBytes) === 0, 'B6: no-seq ok file untouched in quarantine mode');
 check(Buffer.compare(await readFile(join(sessBad, 'session.jsonl.zstd')), badBytes) === 0, 'B6: corrupt file content untouched');
 const qdir30 = join(snap30, 'corrupt-quarantine');
 check((await readdir(qdir30)).some((f) => f.includes('sess-bad') && f.includes('corrupt')), 'B6: corrupt file isolated under undo root quarantine dir');
-// 复扫：sess-fix 与 sess-overlap 应变为 ok
+// 复扫：sess-fix / sess-overlap / sess-dual 应变为 ok，sess-noseq 保持 ok
 const scan3 = await run30('undo_scan', {});
 check(scan3.includes('ok       ') && scan3.includes('sess-fix'), 'B6: repaired single-frame now ok on rescan');
 check(scan3.includes('ok       ') && scan3.includes('sess-overlap'), 'B6: repaired overlap now ok on rescan');
-check(scan3.includes('summary: 3 ok, 0 fixed, 0 fixable, 0 isolated, 1 corrupt'), 'B6: final summary correct');
+check(scan3.includes('ok       ') && scan3.includes('sess-dual'), 'B6: repaired dual overlap now ok on rescan');
+check(scan3.includes('ok       ') && scan3.includes('sess-noseq'), 'B6: no-seq file still ok on rescan');
+check(scan3.includes('summary: 5 ok, 0 fixed, 0 fixable, 0 isolated, 1 corrupt'), 'B6: final summary correct');
 await cleanup(root30);
 
 // ── V0.3.9 R7：WebUI 内联词典 与 lib/i18n 单一词典源一致性 ─────────────────────
