@@ -33,7 +33,7 @@
 | **密钥脱敏 + 本机 vault** | `.env` / 凭据进快照自动脱敏（结构保留），导出 ZIP 零泄露；真实值存本机 vault，本机回滚完整还原 |
 | **一键安全模式** | DSH 完全起不来时，禁用除撤销系统外所有插件保证能启动；自动快照 + 备份配置（profile / home 双级 patch 一并备份恢复，并中和 `dsh.profile.bundles` 里会导致启动器硬校验失败的条目），一键退出；家目录被重建 / 换机时残留状态自动降级不激活 |
 | **崩溃归因** | 上次异常退出时直接给出「最后正常快照」id + 一键回退按钮；按日志签名分类崩溃原因（`session-corrupt` / `bundle-check` / `patch-tree`），横幅给出对应处置建议 |
-| **会话文件扫描修复** | `undo_scan` 扫描 `<home>/sessions/**/session.jsonl.zstd`：单帧布局违规（8/18 崩溃根因）可一键重编码修复（原件留 `.bak` + 隔离区副本），无法解码的只隔离不动；DSH 起不来时用 `dsh-undo.ps1 scan [--fix]` 离线处理（需 Node ≥22.15，Node 20 下降级为提示） |
+| **会话文件扫描修复** | `undo_scan` 扫描 `<home>/sessions/**/session.jsonl.zstd`：单帧布局违规（8/18 崩溃根因）与 synthetic-closer seq 重叠（撤销/快照还原后的中断恢复 seq 重叠）可一键修复（原件留 `.bak` + 隔离区副本）；无法解码的只隔离不动；DSH 起不来时用 `dsh-undo.ps1 scan [--fix]` 离线处理（需 Node ≥22.15，Node 20 下降级为提示） |
 | **快照时间线（Time Machine）** | 快照按日期分组卡片化（备注 / 标签芯片，尊重 `prefers-reduced-motion`）+ 文件级 diff（新增 / 删除行高亮、目录树导航、逐文件浏览）+ 一键回滚 |
 | **快照管理** | 备注 / 标签（`undo_note`，时间线可直接编辑）、定时快照（间隔制，自动建档 + 保留清理）、孤儿 blob GC（`undo_compact`，释放磁盘）、ZIP 导出 / 导入（可选 AES-256-GCM 加密，兼容 PowerShell 明文互操作） |
 | **一键诊断 `undo_doctor`** | 检查快照目录可写性、blob 完整性（缺失 / 孤儿）、设置文件健康、快照规模分布，输出 ok / warn / err 结构化报告与修复提示 |

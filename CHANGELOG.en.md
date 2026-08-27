@@ -2,6 +2,12 @@
 
 Notable changes to dsh-undo-savepoint. Dates are in local time (UTC+8). 中文版:[CHANGELOG.md](CHANGELOG.md)
 
+## [0.4.2] - 2026-08-26
+
+### Added
+
+- **`undo_scan` synthetic-closer seq-overlap repair**: scanning now decodes frame-by-frame instead of concatenating the whole log into memory (avoids `Allocation error : not enough memory` on large files), and detects the "crash-recovery `step/end`+`turn/end` synthetic closers followed by a resumed session reusing the old seq" corruption pattern. With `quarantine=true` / `dsh-undo.ps1 scan --fix`, only that synthetic closer frame is removed, restoring a contiguous log and preserving all later events (original kept as `.bak` + quarantine copy).
+
 ## [0.4.1] - 2026-08-23
 
 ### Fixed
