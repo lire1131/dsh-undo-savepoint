@@ -25,17 +25,10 @@
     },
     "client": {
       "platform": "web",
-      "inject": [
-        "slots",
-        "locale"
-      ]
+      "inject": ["slots", "locale"]
     }
   },
-  "files": [
-    "lib",
-    "tools",
-    "cordis.patch.yml"
-  ],
+  "files": ["lib", "tools", "cordis.patch.yml"],
   "license": "MIT",
   "repository": {
     "type": "git",
