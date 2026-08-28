@@ -37,6 +37,7 @@ import {
   restore,
   createSnapshot,
   removeSnapshot,
+  setSnapshotMeta,
   pruneAuto,
   exportSnapshots,
   importSnapshots,
@@ -238,6 +239,11 @@ const server = createServer(async (req, res) => {
       if (method === 'POST' && path === '/api/undo/remove') {
         const body = await readJson(req);
         return send(res, 200, { ok: true, ...await removeSnapshot(cfg, body?.id) });
+      }
+      if (method === 'POST' && path === '/api/undo/note') {
+        const body = await readJson(req);
+        const r = await setSnapshotMeta(cfg, body?.id ?? '', body ?? {});
+        return send(res, r.ok ? 200 : 404, { ok: r.ok, ...r });
       }
       if (method === 'POST' && path === '/api/undo/prune') {
         const list = await listSnapshots(cfg);
