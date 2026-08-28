@@ -14,7 +14,7 @@
  * @module dsh-undo-savepoint/undo-server
  */
 import { createServer } from 'node:http';
-import { promises as fs, existsSync } from 'node:fs';
+import { promises as fs, existsSync, readFileSync } from 'node:fs';
 import { join, dirname, basename, extname } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { execFile } from 'node:child_process';
@@ -89,21 +89,35 @@ async function computeBootAlert() {
       crashReason,
       lastGoodId: prev.lastGoodAt ? (await lastGoodSnapshot(cfg, await listSnapshots(cfg)))?.id ?? null : null,
     };
-  } catch { cfg.bootAlert = null; }
+  } catch (e) { console.warn(`⚠️ 读取启动警报失败，跳过: ${e?.message ?? e}`); cfg.bootAlert = null; }
 }
 
 // ── 单实例（PID 文件 + 进程存活探测）───────────────────────────────────────
 function isAlive(pid) {
+  // process.kill(pid, 0) 的 catch 是"进程不存在"的标准判定，ESRCH 时返回 false
   if (!Number.isInteger(pid) || pid <= 0) return false;
   try { process.kill(pid, 0); return true; } catch { return false; }
 }
+// 读单实例状态文件。注意：本文件是 ESM，禁止用 require()（会抛 ReferenceError
+// 且曾被裸 catch 吞掉，导致单实例检测形同虚设，见 issue #19）。
+// catch 只吞 JSON 解析失败（状态文件损坏 → 视为无状态并告警），其余异常照常抛出。
 function readState() {
-  try { return JSON.parse(require('node:fs').readFileSync(STATE_FILE, 'utf8')); } catch { return null; }
+  if (!existsSync(STATE_FILE)) return null;
+  try {
+    return JSON.parse(readFileSync(STATE_FILE, 'utf8'));
+  } catch {
+    console.warn(`⚠️ undo-server 状态文件损坏，忽略: ${STATE_FILE}`);
+    return null;
+  }
 }
-const existing = readState();
-if (existing && isAlive(existing.pid) && existing.url) {
-  console.log(`ℹ️  undo-server 已在运行：${existing.url}`);
-  process.exit(0);
+// 单实例检测：读状态文件 + pid 存活 + URL 存活探测三层兜底（issue #19）。
+// pid 存活 ≠ 服务可用（pid 可能被系统复用导致 isAlive 误判），因此再对
+// 局外独有端点 /api/undo/locale 做一次真实探测，双确认才复用退出。
+async function isUndoServerAlive(base) {
+  try {
+    const r = await fetch(new URL('api/undo/locale', base), { signal: AbortSignal.timeout(1500) });
+    return r.ok;
+  } catch { return false; } // 探测失败 = 服务不在（连接拒绝/超时/非本插件），视为陈旧状态
 }
 
 // ── 服务器 ───────────────────────────────────────────────────────────────
@@ -131,6 +145,8 @@ function readJson(req) {
     req.on('end', () => {
       const raw = Buffer.concat(chunks).toString('utf8').trim();
       if (raw === '') return resolve({});
+      // 故意降级：无效 JSON 的请求体按空对象处理，与局内 readJson 行为一致（#19 教训：
+      // 此处 catch 范围仅限 JSON.parse 一行，不吞其他异常）
       try { resolve(JSON.parse(raw)); } catch { resolve({}); }
     });
     req.on('error', () => resolve({}));
@@ -278,6 +294,15 @@ const server = createServer(async (req, res) => {
 // ── 启动 ─────────────────────────────────────────────────────────────────
 async function main() {
   await computeBootAlert();
+  // 单实例检测（必须在 listen 之前）：三层兜底见 isUndoServerAlive 注释
+  const existing = readState();
+  if (existing && isAlive(existing.pid) && existing.url) {
+    if (await isUndoServerAlive(existing.url)) {
+      console.log(`ℹ️  undo-server 已在运行：${existing.url}`);
+      process.exit(0);
+    }
+    console.warn(`⚠️ 状态文件指向 ${existing.url} 但无响应（pid ${existing.pid} 可能已被其他进程复用），忽略并重新启动`);
+  }
   await new Promise((resolve) => {
     server.listen(0, '127.0.0.1', () => resolve());
     server.on('error', (e) => { console.error('undo-server failed to bind:', e.message); process.exit(1); });
@@ -286,7 +311,10 @@ async function main() {
   const port = addr.port;
   const base = `http://127.0.0.1:${port}/`;
   await fs.mkdir(dirname(STATE_FILE), { recursive: true });
-  await fs.writeFile(STATE_FILE, JSON.stringify({ pid: process.pid, port, url: base, startedAt: new Date().toISOString() }, null, 2), 'utf8');
+  // 原子写：先写临时文件再 rename，避免进程中途被杀留下半个 JSON
+  const stateTmp = `${STATE_FILE}.tmp`;
+  await fs.writeFile(stateTmp, JSON.stringify({ pid: process.pid, port, url: base, startedAt: new Date().toISOString() }, null, 2), 'utf8');
+  await fs.rename(stateTmp, STATE_FILE);
   console.log(`\n  dsh-undo-savepoint 局外 WebUI`);
   console.log(`  Profile: ${cfg.profileName}`);
   console.log(`  快照目录: ${LEGACY_ROOT}`);
