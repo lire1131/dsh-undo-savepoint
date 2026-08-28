@@ -2,6 +2,26 @@
 
 dsh-undo-savepoint 的重要变更。日期为本地时间（UTC+8)。English version: [CHANGELOG.en.md](CHANGELOG.en.md)
 
+## [0.4.3] - 2026-08-29
+
+### 修复
+
+- **局外 undo-server 单实例检测从未生效**（#19）：`tools/undo-server.mjs` 是 ESM，`readState()` 却误用 CommonJS 的 `require()`，抛出的 `ReferenceError` 被裸 `catch {}` 静默吞掉，状态文件永远读不到，重复启动会堆积多个服务器进程（各占随机端口、状态互相覆盖）。改用 ESM import 的 `readFileSync`，裸 catch 收窄为只吞 JSON 解析失败（损坏时告警并视为无状态）。已在 DSH 0.1.0-rc.8 环境实测：复用检测 / 陈旧 pid 兜底 / 状态文件损坏降级三场景全过。
+- **三个聊天工具（undo_doctor / undo_message / undo_compact）未注册**（#20）：parameters 用了 `{type:'object', properties:{...}}` 包装，dsh-tools 的 defineTool 自 0.0.1-rc.1 起只接受 value-schema 平铺格式，注册被静默跳过。改为平铺格式后三工具正常注册；smoke-test 新增 4 项注册回归检查（PR #23 by @K1-lihongrong）。
+- **恢复敏感文件后强制 owner-only 权限**（#17）：POSIX 默认 umask 下 `writeFile` 会把恢复的 credentials-local 写成 0644，DSH 的 `assertOwnerOnly` 拒绝启动。恢复命中 `SENSITIVE_DESTS` 的文件后 chmod 0600（PR #22 by @K1-lihongrong），并增强为写入时即带 `mode: 0o600`，彻底消除 0644 窗口。
+- **局外 WebUI 补齐 `/api/undo/note` 路由**（#18）：编辑快照备注/标签不再报 unknown route，与局内实现逐字一致（PR #21 by @K1-lihongrong）。
+
+### 新增
+
+- **双端路由契约 parity 检查**（`tools/check-routes.mjs`，已入 npm test）：局内 20 条 / 局外 19 条 REST 路由的契约固化为清单（双端 19 条 + 单端特有 3 条），任何一端新增或删除路由而未登记契约时 CI 变红，把 issue #18 类漂移拦在合并前。已知可接受的协议级差异（restore 参数名、safe-mode 请求体、status 额外字段、export/import 密码支持）在文件头注释登记。
+- **局外 undo-server 冒烟测试**（`tools/undo-server-smoke.mjs`，已入 npm test）：此前 undo-server 零测试覆盖（#18/#19 均由用户发现）；现覆盖启动即崩、路由命中、单实例复用（exit 0 + "已在运行"）、陈旧 pid 兜底、损坏状态文件降级共 9 项断言，全程 127.0.0.1 隔离沙箱。
+- **undo-server 单实例检测三层兜底**：pid 存活 + URL 存活探测（对局外独有端点 `/api/undo/locale` 真实请求）双确认才复用退出，兜住 pid 被系统复用导致 `isAlive` 误判的边角情况（#19 报告者建议方向 3）；状态文件改原子写（tmp + rename），进程中途被杀不再留下半截 JSON。
+- **裸 catch 审计工具**（`tools/audit-bare-catch.mjs`，开发辅助）：列出全部 144 处裸 catch 及上下文并按"空体/无日志"标注风险，供系统性分级治理（#19 类隐患的排查起点）。本轮已顺手收窄 undo-server 全部 5 处。
+
+### 测试
+
+- DSH 0.1.0-rc.8 + 插件实测单实例检测全部场景；npm test 六环节全绿：smoke 200 项（+4）、undo-server 冒烟 9 项、路由 parity、e2e-watch 10 项、home-resolution、size/version 门禁。
+
 ## [0.4.2] - 2026-08-27
 
 ### 新增
@@ -13,7 +33,6 @@ dsh-undo-savepoint 的重要变更。日期为本地时间（UTC+8)。English ve
 - **多重叠日志可一次修复**：多次崩溃恢复会留下多个 synthetic-closer 重叠帧，此前 `--fix` 每次只删第一个、重分析后仍 fixable、且抛错不写盘，形成永远修不完的死循环；现在循环删除所有匹配的重叠帧直到重分析通过（上限 1024 次），单次 `--fix` 完成修复（PR #14 后续修补）。
 - **无 seq 字段的合法行不再误判 corrupt**：合法 JSON 但不含 `seq`/`seq0` 的记录行（如心跳、未来格式扩展）此前被当作 `bad JSON line` 判 corrupt，与 v0.4.1 行为相比是回归；现在这类行计为合法事件、跳过 seq 连续性校验，真正的 seq 跳跃仍判 corrupt（PR #14 后续修补）。
 - **`engines.dsh` 声明修正**：`>=0.0.1` 按 semver 规则不匹配任何 prerelease 版本（如 0.1.0-rc.8 / 0.1.1-rc.2）；改为 `>=0.0.1-0 || >=0.1.0-rc.2 || >=0.1.1-rc.1`，精确覆盖已实测的三条 rc 线与全部正式版。已在 dsh-tools 0.1.1-rc.2 下跑通全量 smoke（208 项）。
-
 ## [0.4.1] - 2026-08-23
 
 ### 修复

@@ -2,6 +2,26 @@
 
 Notable changes to dsh-undo-savepoint. Dates are in local time (UTC+8). 中文版:[CHANGELOG.md](CHANGELOG.md)
 
+## [0.4.3] - 2026-08-29
+
+### Fixed
+
+- **Standalone undo-server single-instance check never worked** (#19): `tools/undo-server.mjs` is ESM, but `readState()` misused CommonJS `require()`; the thrown `ReferenceError` was silently swallowed by a bare `catch {}`, so the state file was never read and repeated launches piled up multiple server processes (each on its own random port, overwriting each other's state). Now uses the ESM-imported `readFileSync`; the bare catch is narrowed to JSON parse failures only (corrupt file logs a warning and is treated as no state). Verified in a DSH 0.1.0-rc.8 environment: reuse detection / stale pid fallback / corrupt state degradation all pass.
+- **Three chat tools (undo_doctor / undo_message / undo_compact) never registered** (#20): their parameters used the `{type:'object', properties:{...}}` wrapper, which dsh-tools' defineTool has rejected since 0.0.1-rc.1 (it only accepts flat value schemas), so registration was silently skipped. Flattened the schemas; smoke-test gains 4 registration regression checks (PR #23 by @K1-lihongrong).
+- **Sensitive files restored with owner-only permissions** (#17): under the default POSIX umask, `writeFile` restored credentials-local as 0644, which DSH's `assertOwnerOnly` rejects at startup. Restored files matching `SENSITIVE_DESTS` are now chmod 0600 (PR #22 by @K1-lihongrong), hardened further by writing with `mode: 0o600` from the start, eliminating the 0644 window entirely.
+- **Standalone WebUI `/api/undo/note` route added** (#18): editing snapshot notes/tags no longer returns unknown route; implementation matches the host side verbatim (PR #21 by @K1-lihongrong).
+
+### Added
+
+- **Dual-side route parity check** (`tools/check-routes.mjs`, in npm test): the REST contract across host (20 routes) and standalone (19 routes) is now a checked-in manifest (19 shared + 3 single-side); adding/removing a route on either side without registering it turns CI red, catching issue-#18-class drift before merge. Accepted protocol differences (restore param names, safe-mode body, extra status fields, export/import password support) are documented in the file header.
+- **Standalone undo-server smoke test** (`tools/undo-server-smoke.mjs`, in npm test): undo-server previously had zero test coverage (#18/#19 were both user-reported); now covers boot failures, route hits, single-instance reuse (exit 0 + "already running"), stale pid fallback, and corrupt state degradation, 9 assertions total in a 127.0.0.1 sandbox.
+- **Three-layer single-instance fallback for undo-server**: pid liveness + URL liveness probe (real request to the standalone-only `/api/undo/locale`) must both confirm before reuse, guarding against pid reuse causing `isAlive` false positives (reporter's suggestion #3 on #19); the state file is now written atomically (tmp + rename) so a killed process can no longer leave a truncated JSON.
+- **Bare-catch audit tool** (`tools/audit-bare-catch.mjs`, dev helper): lists all 144 bare catches with context, flagged by empty body / no logging, for systematic triage (the starting point for #19-class risks). All 5 bare catches in undo-server were narrowed this round.
+
+### Tests
+
+- All single-instance scenarios verified against DSH 0.1.0-rc.8; full npm test green across all six stages: smoke 200 (+4), undo-server smoke 9, route parity, e2e-watch 10, home-resolution, size/version gates.
+
 ## [0.4.2] - 2026-08-27
 
 ### Added
@@ -13,7 +33,6 @@ Notable changes to dsh-undo-savepoint. Dates are in local time (UTC+8). 中文�
 - **Multi-overlap logs repair in one pass**: repeated crash recoveries can leave several synthetic-closer overlap frames; previously `--fix` removed only the first one, re-analysis stayed `fixable`, and the error aborted before writing — an endless loop that never repaired. The repair now loops, removing every matching overlap frame until re-analysis passes (1024-iteration safety cap), completing in a single `--fix` run (follow-up patch to PR #14).
 - **Valid lines without a seq field are no longer flagged corrupt**: records with valid JSON but no `seq`/`seq0` (e.g. heartbeats, future format extensions) were previously misjudged as `bad JSON line`, a regression vs v0.4.1; they now count as valid events that skip seq continuity checks, while genuine seq gaps are still flagged corrupt (follow-up patch to PR #14).
 - **`engines.dsh` declaration fixed**: `>=0.0.1` matches no prerelease version under semver rules (e.g. 0.1.0-rc.8 / 0.1.1-rc.2); it is now `>=0.0.1-0 || >=0.1.0-rc.2 || >=0.1.1-rc.1`, precisely covering the three verified rc lines and all stable releases. Full smoke suite (208 checks) passes against dsh-tools 0.1.1-rc.2.
-
 ## [0.4.1] - 2026-08-23
 
 ### Fixed
