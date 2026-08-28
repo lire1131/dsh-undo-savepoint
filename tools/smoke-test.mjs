@@ -60,6 +60,12 @@ const run = async (name, args) => {
   if (!t) throw new Error(`tool not registered: ${name}`);
   return await t.execute(args, {});
 };
+// M1 回归：全部文档化工具必须通过真实 defineTool 注册成功（dsh-tools 拒绝
+// { type:'object', properties } 包装时这里会先抓到，不再静默降级）。
+check(tools.has('undo_doctor'), 'M1: undo_doctor registered (parameters schema compatible)');
+check(tools.has('undo_message'), 'M1: undo_message registered (parameters schema compatible)');
+check(tools.has('undo_compact'), 'M1: undo_compact registered (parameters schema compatible)');
+check(tools.has('undo_message_list') && tools.has('undo_scan') && tools.has('undo_safe_mode'), 'M1: undo_message_list / undo_scan / undo_safe_mode registered');
 const cur = async (f) => readFile(join(profile, f), 'utf8');
 const set = async (f, v) => writeFile(join(profile, f), v);
 // Windows 上 fs.rm 偶发 ENOTEMPTY（杀软/索引器短暂占用目录句柄），清理时重试几次
