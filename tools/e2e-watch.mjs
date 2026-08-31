@@ -105,6 +105,33 @@ out5 = await run('undo_list', {});
 const cAfter = (out5.match(/plugin-code-change/g) || []).length;
 check(cAfter === cBefore, `no auto snapshot from the plugin restore itself (${cBefore} -> ${cAfter})`);
 
+// ── #33：profile 根下被 cordis.patch.yml 引用的代码文件触发自动快照 ──────────
+// 场景覆盖：引用落地（首次创建）、再次修改、undo 恢复、恢复写入不触发快照（echo）。
+console.log('== 6. profile-root code file referenced by cordis.patch.yml auto-snapshots (#33) ==');
+const profileCodeCount = async () => {
+  const out = await run('undo_list', {});
+  return (out.match(/profile-code-change/g) || []).length;
+};
+// 引用 + 文件落地（patch.yml 本身是 watched 配置，同一 flush 里 profile 优先级更高）
+await writeFile(join(profile, 'cordis.patch.yml'), "# patch\n- insert:\n    - id: profile-local\n      name: './router-global.mjs'\n");
+await writeFile(join(profile, 'router-global.mjs'), 'export const routes = 1;\n');
+await sleep(1500);
+const pcBefore = await profileCodeCount();
+check(pcBefore >= 1, `profile code change auto-snapshotted as profile-code-change (${pcBefore})`);
+// 再次修改：新内容入快照
+await writeFile(join(profile, 'router-global.mjs'), 'export const routes = 2;\n');
+await sleep(1500);
+const pcMid = await profileCodeCount();
+check(pcMid > pcBefore, `second modification snapshotted (${pcBefore} -> ${pcMid})`);
+// undo：恢复到上一版内容
+const out6 = await run('undo_restore', { mode: 'undo' });
+console.log('   ', out6.split('\n')[0]);
+check((await readFile(join(profile, 'router-global.mjs'), 'utf8')).includes('routes = 1'), 'profile code file restored by undo');
+// 恢复写入（patch.yml 与 router-global.mjs）不触发新快照
+await sleep(1500);
+const pcAfter = await profileCodeCount();
+check(pcAfter === pcMid, `no auto snapshot from the restore itself (${pcMid} -> ${pcAfter})`);
+
 await rm(root, { recursive: true, force: true });
 console.log(`\n== RESULT: ${pass} passed, ${fail} failed ==`);
 process.exit(fail > 0 ? 1 : 0);
