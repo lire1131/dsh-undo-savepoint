@@ -1514,6 +1514,51 @@ await cleanup(root30);
   await rm(groot, { recursive: true, force: true });
 }
 
+// ── #35 脱敏形态补全：YAML 列表项 / 块标量 / 流式续行，env 跨行值 / 裸续行 ──────
+// 纯函数直连：redactYamlContent / redactEnvContent 对各形态替换为占位符，
+// 注释与空行保留，且对已脱敏文本幂等。
+{
+  const core = await import('../lib/core.mjs');
+  const yamlIn = [
+    '# credentials',
+    'apiKey: sk-abc',
+    'secrets:',
+    '  - sk-list-secret',
+    '  - another-secret',
+    'providers:',
+    '  - name: p1',
+    '    key: nested-key-secret',
+    'multiline: |',
+    '  line1-secret',
+    '  line2-secret',
+    'flow: [a-secret,',
+    '  b-secret]',
+    '',
+    'quoted: "sk-inline"',
+  ].join('\n');
+  const envIn = [
+    'API_KEY=sk-abc',
+    'export TOKEN="tok-secret"',
+    '# comment',
+    '',
+    'OPEN_QUOTE="unterminated-secret',
+    'continuation-secret"',
+    'BARE=first-part',
+    'bare-continuation-secret',
+  ].join('\n');
+  const y = core.redactYamlContent(yamlIn);
+  const e = core.redactEnvContent(envIn);
+  check(!/sk-list-secret|another-secret/.test(y) && y.includes('- ***REDACTED***'), '#35: yaml list items replaced with placeholder');
+  check(!/nested-key-secret/.test(y) && /key: \*\*\*REDACTED\*\*\*/.test(y), '#35: nested key-value inside list replaced');
+  check(!/line1-secret|line2-secret/.test(y), '#35: block scalar content lines replaced');
+  check(!/b-secret|a-secret/.test(y), '#35: flow-style continuation lines replaced');
+  check(!/unterminated-secret|continuation-secret/.test(e), '#35: env unterminated-quote multi-line value replaced');
+  check(!/bare-continuation-secret/.test(e) && e.includes('***REDACTED***'), '#35: env bare continuation line replaced with placeholder');
+  check(y.includes('# credentials') && y.split('\n').includes('') && e.includes('# comment') && e.split('\n').includes(''), '#35: comments and blank lines preserved');
+  check(core.redactYamlContent(y) === y && core.redactEnvContent(e) === e, '#35: redaction is idempotent');
+  check(y.includes('apiKey: ***REDACTED***') && y.includes('quoted: ***REDACTED***') && e.includes('API_KEY=***REDACTED***') && e.includes('export TOKEN="***REDACTED***"'), '#35: plain key-value forms still redacted (regression)');
+}
+
 await rm(root, { recursive: true, force: true });
 console.log(`\n== RESULT: ${pass} passed, ${fail} failed ==`);
 process.exit(fail > 0 ? 1 : 0);
