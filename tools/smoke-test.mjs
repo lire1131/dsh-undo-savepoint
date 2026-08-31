@@ -1445,6 +1445,75 @@ await cleanup(root30);
   await rm(droot, { recursive: true, force: true });
 }
 
+// ── #34 撤回守卫：afterHash 指纹判断 + 撤回前 blob 兜底备份 ────────────────────
+// 工厂函数直连（同 P6 模式）：appendMessageOp 写批次，undoMessage 撤回，断言
+// 被后续消息改写的文件跳过、未改写的正常恢复、旧批次行为不变。
+{
+  const core = await import('../lib/core.mjs');
+  const groot = await mkdtemp(join(tmpdir(), 'dsh-undo-guard-'));
+  const gcfg = { autoDir: join(groot, 'auto'), settingsFile: join(groot, 'settings.json'), keepMessageOps: 200, profileName: 't' };
+  await mkdir(join(gcfg.autoDir, 'message-ops'), { recursive: true });
+  const blobs = core.blobDir(gcfg);
+  const put = (p, text) => writeFile(p, text, 'utf8');
+  // 记录一个带守卫字段的 op（模拟 pre-execute 钩子写入的批次）
+  const recOp = async (bid, path, { before, after }) => {
+    let beforeHash = null, beforeExists = false;
+    if (before !== undefined) { await put(path, before); beforeHash = core.sha1Hex(Buffer.from(before, 'utf8')); beforeExists = true; await core.writeBlob(gcfg, beforeHash, Buffer.from(before, 'utf8')); }
+    let afterHash = null, afterExists = false;
+    if (after !== undefined) { await put(path, after); afterHash = core.sha1Hex(Buffer.from(after, 'utf8')); afterExists = true; }
+    await core.appendMessageOp(gcfg, { batchId: bid, messageId: `msg-${bid}`, op: { tool: 'write_file', path, beforeHash, beforeExists, afterHash, afterExists, ts: Date.now() } });
+  };
+  // 1) 创建分支：批次 A 创建 foo，消息 B 重写，撤回 A 时 foo 保留 B 的内容
+  await recOp('b1', join(groot, 'foo.md'), { after: 'content-A' });
+  const foo = join(groot, 'foo.md');
+  await put(foo, 'content-B'); // 后续消息重写
+  const r1 = await core.undoMessage(gcfg, 'b1');
+  check((await readFile(foo, 'utf8')) === 'content-B', '#34: created file rewritten later is kept (foo.md preserves B)');
+  check(r1.skipped.length === 1 && r1.skipped[0].path === foo && /modified after batch/.test(r1.skipped[0].reason) && /foo\.md/.test(r1.notes ?? ''), '#34: skip entry carries path + reason, notes mention it');
+  check(await core.pathExists(join(blobs, core.sha1Hex(Buffer.from('content-B', 'utf8')))), '#34: current content backed up to blob store before undo');
+  // 2) 覆盖分支：批次改写已有文件，后续再改 → 跳过
+  const bar = join(groot, 'bar.md');
+  await recOp('b2', bar, { before: 'bar-orig', after: 'bar-after-A' });
+  await put(bar, 'bar-after-B');
+  const r2 = await core.undoMessage(gcfg, 'b2');
+  check((await readFile(bar, 'utf8')) === 'bar-after-B' && r2.skipped.length === 1, '#34: modified file skipped on overwrite branch too');
+  // 3) 未被后续改动的文件正常恢复（守卫不误伤）
+  const baz = join(groot, 'baz.md');
+  await recOp('b3', baz, { before: 'baz-orig', after: 'baz-after' });
+  const r3 = await core.undoMessage(gcfg, 'b3');
+  check((await readFile(baz, 'utf8')) === 'baz-orig' && r3.changed.length === 1 && r3.skipped.length === 0, '#34: untouched file restores normally');
+  // 4) 新建且未被再改的文件正常删除
+  const qux = join(groot, 'qux.md');
+  await recOp('b4', qux, { after: 'qux-after' });
+  const r4 = await core.undoMessage(gcfg, 'b4');
+  check(!(await core.pathExists(qux)) && r4.deleted.length === 1, '#34: created file untouched since is deleted normally');
+  // 5) 旧批次（无 afterHash/afterExists 字段）行为不变：即使后来被改写也照旧删除
+  const oldf = join(groot, 'old.md');
+  await core.appendMessageOp(gcfg, { batchId: 'b5', messageId: 'msg-b5', op: { tool: 'write_file', path: oldf, beforeHash: null, beforeExists: false, ts: Date.now() } });
+  await put(oldf, 'rewritten-later');
+  const r5 = await core.undoMessage(gcfg, 'b5');
+  check(!(await core.pathExists(oldf)) && r5.deleted.length === 1, '#34: legacy batch without guard fields keeps old behavior');
+  // 6) 同批次多次写同一路径：只对最后一次写入做守卫，恢复到最初内容
+  const multi = join(groot, 'multi.md');
+  await core.writeBlob(gcfg, core.sha1Hex(Buffer.from('m-orig', 'utf8')), Buffer.from('m-orig', 'utf8'));
+  await core.appendMessageOp(gcfg, { batchId: 'b6', messageId: 'msg-b6', op: { tool: 'write_file', path: multi, beforeHash: core.sha1Hex(Buffer.from('m-orig', 'utf8')), beforeExists: true, afterHash: core.sha1Hex(Buffer.from('m-w1', 'utf8')), afterExists: true, ts: 1 } });
+  await core.appendMessageOp(gcfg, { batchId: 'b6', messageId: 'msg-b6', op: { tool: 'write_file', path: multi, beforeHash: core.sha1Hex(Buffer.from('m-w1', 'utf8')), beforeExists: true, afterHash: core.sha1Hex(Buffer.from('m-w2', 'utf8')), afterExists: true, ts: 2 } });
+  await put(multi, 'm-w2');
+  const r6 = await core.undoMessage(gcfg, 'b6');
+  check((await readFile(multi, 'utf8')) === 'm-orig' && r6.skipped.length === 0, '#34: multi-write batch restores to original (guard only on last write)');
+  // 7) 批次删除了文件、之后被重建 → 存在性翻转，跳过
+  const gone = join(groot, 'gone.md');
+  await core.writeBlob(gcfg, core.sha1Hex(Buffer.from('g-orig', 'utf8')), Buffer.from('g-orig', 'utf8'));
+  await put(gone, 'g-orig');
+  await core.appendMessageOp(gcfg, { batchId: 'b7', messageId: 'msg-b7', op: { tool: 'delete_file', path: gone, beforeHash: core.sha1Hex(Buffer.from('g-orig', 'utf8')), beforeExists: true, afterHash: null, afterExists: false, ts: 1 } });
+  await rm(gone, { force: true }); // 工具删除
+  await put(gone, 'g-recreated'); // 后续消息重建
+  const r7 = await core.undoMessage(gcfg, 'b7');
+  check((await readFile(gone, 'utf8')) === 'g-recreated' && r7.skipped.length === 1, '#34: file recreated after batch deletion is kept (existence flip)');
+  check(await core.pathExists(join(blobs, core.sha1Hex(Buffer.from('g-recreated', 'utf8')))), '#34: recreated content backed up before attempted restore');
+  await rm(groot, { recursive: true, force: true });
+}
+
 await rm(root, { recursive: true, force: true });
 console.log(`\n== RESULT: ${pass} passed, ${fail} failed ==`);
 process.exit(fail > 0 ? 1 : 0);
