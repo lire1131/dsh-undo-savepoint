@@ -38,7 +38,7 @@
 
 **细则：**
 
-- 发版 commit 固定写 `release: vX.Y.Z`，变更明细放 CHANGELOG，commit body 最多列 3-5 条要点（不再把十几项塞标题）
+- 发版 commit 固定写 `vX.Y.Z 摘要A + 摘要B (修复 #N ...)`，版本号后不加冒号（历史 `v0.4.3: 摘要` 冒号格式 2026-08-31 起停用），变更明细放 CHANGELOG，commit body 最多列 3-5 条要点（不再把十几项塞标题）
 - 关联 issue：描述尾部 `(#12)`；解决型用 `fix: ... (closes #12)`
 - 破坏性变更：`feat!:` 或 `feat(host)!:`，body 里写迁移说明
 - 内部规划编号（R1 / P6 / D7 / Scenario A 等）**不进 commit 信息**，描述直接写功能本身
@@ -95,3 +95,12 @@ dsh plugin --profile web add github:lire1131/dsh-undo-savepoint#master
 ## 六、内部规划编号
 
 R1-R4 / P1-P7 / B4-B6 / I13 / D7 / Scenario A 等编号只存在于内部任务清单；对外产物（commit / Release / CHANGELOG / README / docs）一律翻译成功能描述。
+
+## 七、叙述文本
+
+> 2026-08-31 起执行。适用于对外叙述性文字（版本 commit 标题、Release / CHANGELOG 条目正文、issue 与 PR 回复正文、README 功能描述）。结构性格式符号不受此限（见第 4 条）。
+
+1. **禁用修辞**：不用比喻、排比、感叹、口号式表述；只写事实、原因、结果（做了什么、为什么、实测表现）。形容词仅在传达可验证信息时保留（如「明确的错误信息」），不写渲染性形容（如「焕然一新」「重磅」）。
+2. **禁用破折号（——）**：一律不出现，用逗号、句号或括号衔接。英文文本同样不用 em dash（—）。
+3. **禁用冒号引导叙述**：版本 commit 标题不写 `vX.Y.Z: 摘要`，直接 `vX.Y.Z 摘要`；叙述句内部不接冒号长串。条目格式必需的结构性冒号除外（`**标题**：`、`type(scope):` 前缀、表格、命令示例）。
+4. **结构性符号不受限**：commit type 前缀冒号、CHANGELOG 条目标题冒号、代码块、命令行、表格、markdown 标题、列表标记属于格式骨架，照常使用。
