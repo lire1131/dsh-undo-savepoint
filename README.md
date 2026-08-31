@@ -201,15 +201,15 @@ explorer "$dshHome\profiles\web\node_modules\dsh-undo-savepoint\tools"
 powershell -NoProfile -ExecutionPolicy Bypass -File "tools\dsh-undo-savepoint-gui.ps1"
 
 # 命令行
-powershell -NoProfile -ExecutionPolicy Bypass -File "tools\dsh-undo-savepoint.ps1" list
-powershell -NoProfile -ExecutionPolicy Bypass -File "tools\dsh-undo-savepoint.ps1" snapshot -Label "原因"
-powershell -NoProfile -ExecutionPolicy Bypass -File "tools\dsh-undo-savepoint.ps1" undo
-powershell -NoProfile -ExecutionPolicy Bypass -File "tools\dsh-undo-savepoint.ps1" undo -SyncDeps
-powershell -NoProfile -ExecutionPolicy Bypass -File "tools\dsh-undo-savepoint.ps1" redo
-powershell -NoProfile -ExecutionPolicy Bypass -File "tools\dsh-undo-savepoint.ps1" restore -Id <id> -Force
-powershell -NoProfile -ExecutionPolicy Bypass -File "tools\dsh-undo-savepoint.ps1" restore -Id <id> -Force -SyncDeps
-powershell -NoProfile -ExecutionPolicy Bypass -File "tools\dsh-undo-savepoint.ps1" remove -Id <id>
-powershell -NoProfile -ExecutionPolicy Bypass -File "tools\dsh-undo-savepoint.ps1" prune -KeepAuto 20
+powershell -NoProfile -ExecutionPolicy Bypass -File "tools\dsh-undo.ps1" list
+powershell -NoProfile -ExecutionPolicy Bypass -File "tools\dsh-undo.ps1" snapshot -Label "原因"
+powershell -NoProfile -ExecutionPolicy Bypass -File "tools\dsh-undo.ps1" undo
+powershell -NoProfile -ExecutionPolicy Bypass -File "tools\dsh-undo.ps1" undo -SyncDeps
+powershell -NoProfile -ExecutionPolicy Bypass -File "tools\dsh-undo.ps1" redo
+powershell -NoProfile -ExecutionPolicy Bypass -File "tools\dsh-undo.ps1" restore -Id <id> -Force
+powershell -NoProfile -ExecutionPolicy Bypass -File "tools\dsh-undo.ps1" restore -Id <id> -Force -SyncDeps
+powershell -NoProfile -ExecutionPolicy Bypass -File "tools\dsh-undo.ps1" remove -Id <id>
+powershell -NoProfile -ExecutionPolicy Bypass -File "tools\dsh-undo.ps1" prune -KeepAuto 20
 
 # 安装插件（自动前后存档，失败自动回退）
 powershell -NoProfile -ExecutionPolicy Bypass -File "tools\dsh-plugin.ps1" add <包名>
