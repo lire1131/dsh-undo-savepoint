@@ -174,6 +174,22 @@ const server = createServer(async (req, res) => {
     const url = new URL(req.url ?? '/', 'http://127.0.0.1');
     const path = url.pathname;
     const method = (req.method ?? 'GET').toUpperCase();
+    // M2 加固：跨站 CSRF 防护——浏览器发起的跨源请求必带 Origin，与 Host 不符即拒。
+    // 无 Origin 的请求（curl / 本机脚本）放行，保持离线工具可用性。
+    const origin = req.headers?.origin;
+    if (origin) {
+      let ok = false;
+      try {
+        const o = new URL(origin);
+        const host = String(req.headers?.host ?? '');
+        ok = o.host === host && (o.protocol === 'http:' || o.protocol === 'https:');
+      } catch { ok = false; }
+      if (!ok) {
+        res.writeHead(403, { 'content-type': 'application/json; charset=utf-8' });
+        res.end(JSON.stringify({ ok: false, error: { code: 'forbidden', message: 'cross-origin request rejected' } }));
+        return;
+      }
+    }
     if (path.startsWith('/api/')) {
       if (method === 'GET' && path === '/api/undo/status') {
         const list = await listSnapshots(cfg);
