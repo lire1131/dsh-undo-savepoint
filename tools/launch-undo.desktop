@@ -2,7 +2,10 @@
 Type=Application
 Name=dsh-undo-savepoint 局外 WebUI
 Comment=DSH 挂掉时的一键回退面板（配置/插件/健康）
-Exec=sh -c 'exec node "$(dirname "$0")/undo-server.mjs" "$@"' -- %k
+# L2 修复：模板被拷到桌面后无法用 %k 定位插件目录（$0='--'，dirname 失效），
+# 改为按标准安装布局自查找 tools/launch-undo.sh（与 make-desktop-shortcut.ps1 同源）。
+# 插件自动生成的那个 .desktop（ensureDesktopShortcut）用的是绝对路径，不受此影响。
+Exec=sh -c 'for d in "$HOME/.dsh/profiles/web/node_modules/dsh-undo-savepoint/tools" "$HOME/.dsh/profiles/node_modules/dsh-undo-savepoint/tools" "$HOME/node_modules/dsh-undo-savepoint/tools"; do if [ -x "$d/launch-undo.sh" ]; then exec "$d/launch-undo.sh" "$@"; fi; done; echo "dsh-undo-savepoint not found - install the plugin first" >&2; read x' -- %k
 Icon=system-file-manager
 Terminal=true
 Categories=Utility;
