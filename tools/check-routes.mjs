@@ -9,8 +9,9 @@
  * 已知且接受的协议级差异（path 相同但请求/响应结构不同，勿"顺手统一"，
  * 两端前端各自绑定现协议）：restore 参数名（host: body.id / standalone:
  * body.snapshot_id）、safe-mode 请求体（host: action / standalone: on）、
- * status 响应（standalone 额外带 profiles）、export/import（仅 host 支持
- * password）、settings POST（仅 host 触发 watcher/timer/workspaceDirs）。
+ * status 响应（standalone 额外带 profiles）、settings POST（仅 host 触发
+ * watcher/timer/workspaceDirs）。export/import 双端均支持可选 password
+ * （PR #30 起局外也透传，两端行为一致）。
  *
  * 用法：node tools/check-routes.mjs（已加入 npm test）
  *

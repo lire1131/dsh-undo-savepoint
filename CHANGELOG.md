@@ -2,6 +2,30 @@
 
 dsh-undo-savepoint 的重要变更。日期为本地时间（UTC+8)。English version: [CHANGELOG.en.md](CHANGELOG.en.md)
 
+## [0.4.4] - 2026-08-31
+
+### 安全
+
+- **导入 ZIP 校验加固**（#24 #25，PR #26 by @K1-lihongrong + 本版补充）：undo_import 与局外 WebUI 导入此前把 ZIP 条目名直接拼接为文件系统路径写入，构造 blobs/.. 开头的条目可以在快照仓库外创建文件。解压没有大小限制，高压缩比条目可以耗尽内存。现在条目名必须匹配固定格式，blob 条目名必须是 40 位 sha1，快照 id 必须匹配生成格式，包含 .. 与绝对路径与盘符的条目拒绝。三类恶意构造实测全部拒绝且无文件写出，合法导入不受影响。PR #26 落地单条解压上限 64MB 与压缩包体积上限 1GB，本版补充读文件前 stat 预检（此前是读入内存后才检查，超大文件会先打进内存再拒绝）与多条目累计解压上限 4GB（1GB 压缩包理论上可塞进上万个高压缩比条目，单条上限拦不住累计量）。
+- **局内与局外 REST API 增加跨源请求校验**（#27，PR #28 by @K1-lihongrong）：此前任何网页都可以向本机 API 发起跨站请求触发撤销与恢复。现在请求带 Origin 且与 Host 不一致时返回 403。无 Origin 的请求放行，curl 与本机脚本不受影响。已知边界，域名解析重绑定场景（攻击者域名解析到 127.0.0.1，Origin 与 Host 同为该域名）校验会放行，默认部署是本机直连不受影响，后续改进记录。
+- **消息级撤回增加改写判断**（#34）：批次记录新增 afterHash 字段，记录工具执行后的内容指纹。撤回时文件当前内容与指纹不一致就跳过该文件，不覆盖不删除。撤回前把批次涉及文件的当前内容写入 blob 库，判断出错时内容仍可找回。旧批次无 afterHash 字段，行为不变。
+- **敏感文件脱敏补齐形态**（#35）：YAML 列表项、块标量内容、流式续行、env 引号跨行值与裸续行此前绕过行级脱敏进入快照。现在一律替换为占位符，注释与空行保留，脱敏幂等。
+
+### 修复
+
+- **局外 WebUI 导出导入支持密码**（#29，PR #30 by @K1-lihongrong）：局外服务器此前丢弃请求体中的密码，加密导出不生效。现在与局内一致，无密码与错误密码导入时返回明确错误。
+- **README 文件名与 Linux 桌面模板**（#31，PR #32 by @K1-lihongrong）：离线 CLI 示例改为实际文件名 dsh-undo.ps1，双语同步。desktop 模板改为按标准安装位置查找启动脚本。
+- **watcher 覆盖 profile 根下代码文件**（#33）：cordis.patch.yml 引用的代码文件变更时现在触发自动快照，reason 为 profile-code-change，恢复写入不重复触发。已知边界，profile 根目录是非递归监听，引用子目录路径时不触发，有真实用例再补。
+
+### 变更
+
+- **适配 DSH 0.1.2-alpha 线**：engines.dsh 增加 `|| >=0.1.2-alpha.2`。semver 预发布匹配规则下 prerelease 版本只被相同版本号元组的比较器匹配，此前的范围声明对 0.1.2-alpha.* 判不匹配，DSH 0.1.2-alpha 用户无法安装。逐项源码核对 0.1.1-rc.2 到 0.1.2-alpha.2 的变化面，ctx.tools.register 与 defineTool 的 value-schema 平铺格式不变，tools/pre-execute 事件仍在，webServer.register 签名不变（新增 gzip 压缩为可选配置且默认关闭），resolveDshHome 无代码变化，WebUI 进程令牌认证 URL 只影响 dsh web 打印与打开的地址形态，undo_scan 对会话日志新字段的容错（0.4.2 引入）覆盖 0.1.2 的会话事件字段增减。已实装 DSH 0.1.2-alpha.2 验证，插件安装、dsh web 启动、插件 REST 面板、watcher 自动快照、Origin 校验全部正常。
+
+### 测试
+
+- npm test 七环节全部通过。smoke 231 项，其中撤回守卫 10 项、脱敏形态 9 项。undo-server 冒烟 9 项。路由 parity。e2e-watch 14 项，其中 profile 代码 4 项。home-resolution。size 与 version 门禁。
+- DSH 0.1.2-alpha.2 环境实测（隔离 DSH_HOME）：CLI 启动、profile 组合识别插件、插件以 link 方式安装、dsh web 启动后 REST 状态与快照清单正常、启动期间 watcher 自动生成基线与配置快照、跨源请求 403、同源请求 200。
+
 ## [0.4.3] - 2026-08-29
 
 ### 修复

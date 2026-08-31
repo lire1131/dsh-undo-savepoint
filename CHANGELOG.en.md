@@ -2,6 +2,30 @@
 
 Notable changes to dsh-undo-savepoint. Dates are in local time (UTC+8). 中文版:[CHANGELOG.md](CHANGELOG.md)
 
+## [0.4.4] - 2026-08-31
+
+### Security
+
+- **Import ZIP validation hardened** (#24 #25, PR #26 by @K1-lihongrong plus this release): undo_import and the standalone WebUI import used to concatenate ZIP entry names directly into filesystem paths, so an entry starting with blobs/.. could create files outside the snapshot store. Decompression had no size limits, so a high-ratio entry could exhaust memory. Entry names must now match strict formats, blob entries must be 40-character sha1 names, snapshot ids must match the generator format, and entries containing .., absolute paths, or drive letters are rejected. All three malicious constructions were tested and rejected with no files written; legitimate imports are unaffected. PR #26 shipped the 64MB per-entry decompression cap and the 1GB archive size cap; this release adds a stat pre-check before reading the file (previously the size was only checked after loading it into memory, so an oversized file hit memory first) and a 4GB cumulative decompression cap (a 1GB archive can theoretically hold tens of thousands of high-ratio entries, which a per-entry cap alone cannot stop).
+- **In-session and standalone REST APIs now validate cross-origin requests** (#27, PR #28 by @K1-lihongrong): previously any web page could fire a cross-site request at the local API to trigger undo/restore. Requests carrying an Origin that does not match the Host are now rejected with 403. Requests without an Origin pass, so curl and local scripts are unaffected. Known boundary, DNS rebinding (an attacker domain resolving to 127.0.0.1 makes Origin and Host identical) still passes; the default deployment is direct localhost access and is unaffected. Recorded as a future improvement.
+- **Message-level undo now detects later overwrites** (#34): batch records gain an afterHash field holding the post-execution content fingerprint. On undo, files whose current content differs from the fingerprint are skipped, neither overwritten nor deleted. Before undoing, the current content of every file in the batch is written to the blob store, so content is still recoverable if the guard ever misjudges. Old batches without the field keep the previous behavior.
+- **Sensitive-file redaction covers missing forms** (#35): YAML list items, block scalar content, flow-style continuation lines, env quoted multi-line values, and bare continuation lines previously bypassed line-level redaction and entered snapshots. They are now all replaced with a placeholder; comments and blank lines are preserved, and redaction is idempotent.
+
+### Fixed
+
+- **Standalone WebUI export/import supports passwords** (#29, PR #30 by @K1-lihongrong): the standalone server previously dropped the password from request bodies, so encrypted export never took effect. It now matches the in-session side, with clear errors for missing or wrong passwords on import.
+- **README file names and Linux desktop template** (#31, PR #32 by @K1-lihongrong): offline CLI examples now use the real file name dsh-undo.ps1 in both languages; the desktop template now locates the launcher via standard install locations.
+- **Watcher covers profile-root code files** (#33): code files referenced by cordis.patch.yml now trigger automatic snapshots on change, with reason profile-code-change; restore writes do not re-trigger. Known boundary, the profile root is watched non-recursively, so references into subdirectories do not trigger; will be addressed when a real use case appears.
+
+### Changed
+
+- **DSH 0.1.2-alpha line support**: engines.dsh gains `|| >=0.1.2-alpha.2`. Under semver prerelease matching, a prerelease version only satisfies comparators sharing its version tuple, so the previous range did not match 0.1.2-alpha.* and DSH 0.1.2-alpha users could not install the plugin. Reviewed every change from 0.1.1-rc.2 to 0.1.2-alpha.2 at the source level: ctx.tools.register and defineTool's flat value-schema are unchanged, the tools/pre-execute event still exists, webServer.register keeps its signature (gzip compression is optional and off by default), resolveDshHome has no code changes, the WebUI process-token authenticated URL only changes the address dsh web prints and opens, and undo_scan's tolerance for new session-log fields (introduced in 0.4.2) covers 0.1.2's session event field changes. Verified against a real DSH 0.1.2-alpha.2 install: plugin installation, dsh web boot, the plugin REST panel, watcher auto-snapshots, and Origin validation all work.
+
+### Tests
+
+- All seven npm test stages pass. smoke 231 checks, including 10 undo-guard and 9 redaction-form checks. undo-server smoke 9 checks. Route parity. e2e-watch 14 checks, including 4 for profile code. home-resolution. size and version gates.
+- Live verification on DSH 0.1.2-alpha.2 (isolated DSH_HOME): CLI boots, the profile tree composes the plugin, link installation succeeds, REST status and snapshot listing work after dsh web boot, the watcher produces baseline and config snapshots during startup, cross-origin requests get 403, same-origin gets 200.
+
 ## [0.4.3] - 2026-08-29
 
 ### Fixed
