@@ -266,11 +266,13 @@ const server = createServer(async (req, res) => {
         return send(res, 200, { ok: true, pruned: await pruneAuto(cfg, list) });
       }
       if (method === 'POST' && path === '/api/undo/export') {
-        return send(res, 200, { ok: true, ...await exportSnapshots(cfg) });
+        const body = await readJson(req);
+        // M3 修复：把 WebUI 收集的密码透传给导出（否则加密开关是摆设）。
+        return send(res, 200, { ok: true, ...await exportSnapshots(cfg, body?.password ?? '') });
       }
       if (method === 'POST' && path === '/api/undo/import') {
         const body = await readJson(req);
-        return send(res, 200, { ok: true, ...await importSnapshots(cfg, body?.path) });
+        return send(res, 200, { ok: true, ...await importSnapshots(cfg, body?.path, body?.password ?? '') });
       }
       if (method === 'POST' && path === '/api/undo/pick-dir') { return send(res, 200, { ok: true, ...await pickDirectory() }); }
       if (method === 'POST' && path === '/api/undo/pick-file') { return send(res, 200, { ok: true, ...await pickFile() }); }
