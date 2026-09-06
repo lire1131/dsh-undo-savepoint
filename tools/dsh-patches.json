@@ -1,13 +1,25 @@
 {
-  "version": 1,
-  "note": "dsh-session-persistence-jsonl 容错补丁清单（v0.3.8, B4）。old = rc8 原始代码片段，new = rc6 已验证的补丁代码片段。apply/verify 通过精确子串匹配替换。",
+  "version": 2,
+  "note": "dsh-session-persistence-jsonl 容错补丁清单（v0.3.8 B4，v0.4.5 起支持多版本子串）。补丁可带 variants（同一逻辑在不同 DSH 版本的代码形态），任一形态命中即匹配。old = 原始代码片段，new = 已验证补丁片段。apply/verify 通过精确子串匹配替换。",
   "target": "@deepseek-ai/dsh-session-persistence-jsonl/lib/index.js",
   "patches": [
     {
       "id": "appendBatch-selfheal",
       "description": "appendBatch 自愈：并发/初始化竞态下文件 ENOENT 时 materialize 再追加（8/17 复盘 3.1）",
       "old": "\t/** Durably append a batch, lazily materializing the file when not yet present. */\n\tasync appendBatch(meta, events, isMaterialized) {\n\t\tawait this.ensureRootEncoding();\n\t\tif (isMaterialized) await this.appendLines(meta, events);\n\t\telse await this.materialize(meta, events);\n\t}",
-      "new": "\t/** Durably append a batch, lazily materializing the file when not yet present. */\n\tasync appendBatch(meta, events, isMaterialized) {\n\t\tawait this.ensureRootEncoding();\n\t\tif (isMaterialized) {\n\t\t\ttry {\n\t\t\t\tawait this.appendLines(meta, events);\n\t\t\t} catch (error) {\n\t\t\t\tif (isENOENT(error)) await this.materialize(meta, events);\n\t\t\t\telse throw error;\n\t\t\t}\n\t\t} else await this.materialize(meta, events);\n\t}"
+      "new": "\t/** Durably append a batch, lazily materializing the file when not yet present. */\n\tasync appendBatch(meta, events, isMaterialized) {\n\t\tawait this.ensureRootEncoding();\n\t\tif (isMaterialized) {\n\t\t\ttry {\n\t\t\t\tawait this.appendLines(meta, events);\n\t\t\t} catch (error) {\n\t\t\t\tif (isENOENT(error)) await this.materialize(meta, events);\n\t\t\t\telse throw error;\n\t\t\t}\n\t\t} else await this.materialize(meta, events);\n\t}",
+      "variants": [
+        {
+          "note": "0.1.0-rc.8 ~ 0.1.2-alpha 线（appendBatch(meta, …)）",
+          "old": "\t/** Durably append a batch, lazily materializing the file when not yet present. */\n\tasync appendBatch(meta, events, isMaterialized) {\n\t\tawait this.ensureRootEncoding();\n\t\tif (isMaterialized) await this.appendLines(meta, events);\n\t\telse await this.materialize(meta, events);\n\t}",
+          "new": "\t/** Durably append a batch, lazily materializing the file when not yet present. */\n\tasync appendBatch(meta, events, isMaterialized) {\n\t\tawait this.ensureRootEncoding();\n\t\tif (isMaterialized) {\n\t\t\ttry {\n\t\t\t\tawait this.appendLines(meta, events);\n\t\t\t} catch (error) {\n\t\t\t\tif (isENOENT(error)) await this.materialize(meta, events);\n\t\t\t\telse throw error;\n\t\t\t}\n\t\t} else await this.materialize(meta, events);\n\t}"
+        },
+        {
+          "note": "0.1.2-rc.1+（appendBatch(storage, …)，DSH 0.1.2-rc.1 产物实测命中）",
+          "old": "\t/** Durably append a batch, lazily materializing the file when not yet present. */\n\tasync appendBatch(storage, events, isMaterialized) {\n\t\tawait this.ensureRootEncoding();\n\t\tif (isMaterialized) await this.appendLines(storage.meta, events);\n\t\telse await this.materialize(storage, events);\n\t}",
+          "new": "\t/** Durably append a batch, lazily materializing the file when not yet present. */\n\tasync appendBatch(storage, events, isMaterialized) {\n\t\tawait this.ensureRootEncoding();\n\t\tif (isMaterialized) {\n\t\t\ttry {\n\t\t\t\tawait this.appendLines(storage.meta, events);\n\t\t\t} catch (error) {\n\t\t\t\tif (isENOENT(error)) await this.materialize(storage, events);\n\t\t\t\telse throw error;\n\t\t\t}\n\t\t} else await this.materialize(storage, events);\n\t}"
+        }
+      ]
     },
     {
       "id": "listArtifacts-isolate",

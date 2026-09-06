@@ -1199,6 +1199,43 @@ const bs29 = JSON.parse(await readFile(join(snap29, 'auto', 'boot-state.json'), 
 check(bs29.crashReason === 'bundle-check', `B5: boot-state classifies bundle-check (got ${bs29.crashReason})`);
 await cleanup(root29);
 
+console.log('== B4b. patch manifest: multi-version substrings + client declaration (v0.4.5) ==');
+{
+  const { matchPatchesInText } = await import('../lib/core.mjs');
+  const manifest = JSON.parse(await readFile(fileURLToPath(new URL('../tools/dsh-patches.json', import.meta.url)), 'utf8'));
+  const selfheal = manifest.patches.find((p) => p.id === 'appendBatch-selfheal');
+  const others = manifest.patches.filter((p) => p.id !== 'appendBatch-selfheal');
+  // 清单健全性：selfheal 双形态（0.1.2-alpha 线与 rc 线），子串非空且互异；其余补丁扁平
+  check(selfheal?.variants?.length === 2, 'B4b: selfheal patch carries 2 version variants');
+  check(selfheal.variants.every((v) => typeof v.old === 'string' && typeof v.new === 'string' && v.old && v.new && v.old !== v.new), 'B4b: variants non-empty and old != new');
+  check(others.every((p) => !p.variants && p.old && p.new), 'B4b: other patches stay flat (both product lines match)');
+  // alpha.2 产物形态（三补丁 old 全命中）：missing 全部、无 unmatched
+  const alphaText = [selfheal.variants[0].old, ...others.map((p) => p.old)].join('\n');
+  const rAlpha = matchPatchesInText(alphaText, manifest.patches);
+  check(rAlpha.unmatched.length === 0 && rAlpha.missing.length === 3, 'B4b: alpha-form product resolves (missing=3, unmatched=0)');
+  // rc.1 产物形态（appendBatch 签名 storage）：多版本子串生效——单形态清单此处会 unmatched
+  const rc1Text = [selfheal.variants[1].old, ...others.map((p) => p.old)].join('\n');
+  const rRc1 = matchPatchesInText(rc1Text, manifest.patches);
+  check(rRc1.unmatched.length === 0 && rRc1.missing.length === 3, 'B4b: rc.1-form product resolves via variants (regression guard)');
+  // 已应用形态（任一形态 new 命中即 applied）
+  const appliedText = [selfheal.variants[1].new, ...others.map((p) => p.new)].join('\n');
+  const rApplied = matchPatchesInText(appliedText, manifest.patches);
+  check(rApplied.missing.length === 0 && rApplied.unmatched.length === 0, 'B4b: applied product reports ok');
+  const mixedText = [selfheal.variants[0].new, ...others.map((p) => p.new)].join('\n');
+  const rMixed = matchPatchesInText(mixedText, manifest.patches);
+  check(rMixed.missing.length === 0 && rMixed.unmatched.length === 0, 'B4b: any-variant applied counts as applied (cross-version upgrade)');
+  // 全不命中 → unmatched（驱动启动告警）
+  const rJunk = matchPatchesInText('const x = 1;', manifest.patches);
+  check(rJunk.unmatched.length === manifest.patches.length, 'B4b: unrelated text reports all unmatched');
+  // 声明回归守卫：inject 全包名 + engines 覆盖 rc.1 + client.js 与 package.json 一致
+  const pkg = JSON.parse(await readFile(fileURLToPath(new URL('../package.json', import.meta.url)), 'utf8'));
+  const fullNames = ['@deepseek-ai/dsh-client-locale', '@deepseek-ai/dsh-client-ui-conversation', '@deepseek-ai/dsh-client-ui-settings'];
+  check(JSON.stringify(pkg.dsh.client.inject) === JSON.stringify(fullNames), 'B4b: dsh.client.inject uses full package names');
+  check(pkg.engines.dsh.includes('0.1.2-rc.1'), 'B4b: engines.dsh covers 0.1.2-rc.1');
+  const clientText = await readFile(fileURLToPath(new URL('../lib/client.js', import.meta.url)), 'utf8');
+  check(clientText.includes('const inject = ["@deepseek-ai/dsh-client-locale", "@deepseek-ai/dsh-client-ui-conversation", "@deepseek-ai/dsh-client-ui-settings"];'), 'B4b: client.js inject mirrors package.json');
+}
+
 console.log('== 38. B6: undo_scan — session health scan, fixable repair, corrupt isolation (v0.3.8) ==');
 const root30 = await mkdtemp(join(tmpdir(), 'dsh-undo-test30-'));
 const home30 = join(root30, 'home'), profile30 = join(root30, 'profile'), snap30 = join(root30, 'snaps');
@@ -1206,7 +1243,7 @@ await mkdir(home30, { recursive: true }); await mkdir(profile30, { recursive: tr
 if (!hasZstd) {
   // Node < 22.15 无 zstd Zlib API：B6 用例跳过（不算失败），插件其余功能不受影响
   console.log('  skip - B6 zstd requires Node 22.15+; skipped on this Node (plugin degrades to undo_scan unsupported notice)');
-  pass += 23;
+  pass += 26;
   await cleanup(root30);
   await rm(root, { recursive: true, force: true });
   console.log(`\n== RESULT: ${pass} passed, ${fail} failed ==`);
@@ -1227,6 +1264,11 @@ const sessNoseq = join(home30, 'sessions', 'sess-noseq');
 const sessBad = join(home30, 'sessions', 'sess-bad');
 await mkdir(sessOk, { recursive: true }); await mkdir(sessFix, { recursive: true }); await mkdir(sessOverlap, { recursive: true }); await mkdir(sessDual, { recursive: true }); await mkdir(sessNoseq, { recursive: true }); await mkdir(sessBad, { recursive: true });
 await writeFile(join(sessOk, 'session.jsonl.zstd'), Buffer.concat([zlib.zstdCompressSync(Buffer.from(hdr30, 'utf8')), zlib.zstdCompressSync(Buffer.from(evt30, 'utf8'))]));
+// DSH 0.1.2 空会话（materializeHeader）：单帧仅含合法 header 行，0 事件 → 应判 ok（v0.4.5 修复）
+const sessEmpty = join(home30, 'sessions', 'sess-empty');
+await mkdir(sessEmpty, { recursive: true });
+const emptyBytes = zlib.zstdCompressSync(Buffer.from(hdr30, 'utf8'));
+await writeFile(join(sessEmpty, 'session.jsonl.zstd'), emptyBytes);
 const fixBytes = zlib.zstdCompressSync(Buffer.from(hdr30 + evt30, 'utf8')); // 单帧
 await writeFile(join(sessFix, 'session.jsonl.zstd'), fixBytes);
 const overlapBytes = Buffer.concat([
@@ -1293,14 +1335,15 @@ apply(ctx30, { manualDir: join(snap30, 'manual'), autoDir: join(snap30, 'auto'),
 await new Promise((r) => setTimeout(r, 350));
 const run30 = async (name, args) => (await tools30.get(name).execute(args, {}));
 const scan1 = await run30('undo_scan', {});
-check(scan1.includes('6 session file(s)'), 'B6: scan reports 6 files');
+check(scan1.includes('7 session file(s)'), 'B6: scan reports 7 files');
 check(scan1.includes('ok       ') && scan1.includes('sess-ok'), 'B6: compliant file marked ok');
-check(scan1.includes('fixable  ') && scan1.includes('sess-fix'), 'B6: single-frame file marked fixable');
+check(scan1.includes('ok       ') && scan1.includes('sess-empty'), 'B6: header-only empty session (0.1.2 materializeHeader) marked ok, not fixable');
+check(scan1.includes('fixable  ') && scan1.includes('sess-fix'), 'B6: single-frame file with events marked fixable');
 check(scan1.includes('fixable  ') && scan1.includes('sess-overlap') && scan1.includes('synthetic-closer overlap'), 'B6: synthetic-closer overlap file marked fixable');
 check(scan1.includes('fixable  ') && scan1.includes('sess-dual') && scan1.includes('synthetic-closer overlap'), 'B6: dual synthetic-closer overlap file marked fixable');
 check(scan1.includes('ok       ') && scan1.includes('sess-noseq'), 'B6: no-seq valid JSON lines file marked ok (not bad JSON)');
 check(scan1.includes('corrupt  ') && scan1.includes('sess-bad'), 'B6: bad-magic file marked corrupt');
-check(scan1.includes('summary: 2 ok, 0 fixed, 3 fixable, 0 isolated, 1 corrupt'), 'B6: read-only summary correct');
+check(scan1.includes('summary: 3 ok, 0 fixed, 3 fixable, 0 isolated, 1 corrupt'), 'B6: read-only summary correct');
 // quarantine 模式：修复 fixable（.bak + 隔离复制），corrupt 仅隔离
 const scan2 = await run30('undo_scan', { quarantine: true });
 check(scan2.includes('fixed    ') && scan2.includes('sess-fix'), 'B6: single-frame fixed in quarantine mode');
@@ -1311,16 +1354,18 @@ check(Buffer.compare(await readFile(join(sessFix, 'session.jsonl.zstd.bak')), fi
 check(Buffer.compare(await readFile(join(sessOverlap, 'session.jsonl.zstd.bak')), overlapBytes) === 0, 'B6: .bak of overlap original kept');
 check(Buffer.compare(await readFile(join(sessDual, 'session.jsonl.zstd.bak')), dualBytes) === 0, 'B6: .bak of dual original kept');
 check(Buffer.compare(await readFile(join(sessNoseq, 'session.jsonl.zstd')), noseqBytes) === 0, 'B6: no-seq ok file untouched in quarantine mode');
+check(Buffer.compare(await readFile(join(sessEmpty, 'session.jsonl.zstd')), emptyBytes) === 0, 'B6: header-only ok file untouched in quarantine mode');
 check(Buffer.compare(await readFile(join(sessBad, 'session.jsonl.zstd')), badBytes) === 0, 'B6: corrupt file content untouched');
 const qdir30 = join(snap30, 'corrupt-quarantine');
 check((await readdir(qdir30)).some((f) => f.includes('sess-bad') && f.includes('corrupt')), 'B6: corrupt file isolated under undo root quarantine dir');
 // 复扫：sess-fix / sess-overlap / sess-dual 应变为 ok，sess-noseq 保持 ok
 const scan3 = await run30('undo_scan', {});
 check(scan3.includes('ok       ') && scan3.includes('sess-fix'), 'B6: repaired single-frame now ok on rescan');
+check(scan3.includes('ok       ') && scan3.includes('sess-empty'), 'B6: header-only file still ok on rescan');
 check(scan3.includes('ok       ') && scan3.includes('sess-overlap'), 'B6: repaired overlap now ok on rescan');
 check(scan3.includes('ok       ') && scan3.includes('sess-dual'), 'B6: repaired dual overlap now ok on rescan');
 check(scan3.includes('ok       ') && scan3.includes('sess-noseq'), 'B6: no-seq file still ok on rescan');
-check(scan3.includes('summary: 5 ok, 0 fixed, 0 fixable, 0 isolated, 1 corrupt'), 'B6: final summary correct');
+check(scan3.includes('summary: 6 ok, 0 fixed, 0 fixable, 0 isolated, 1 corrupt'), 'B6: final summary correct');
 await cleanup(root30);
 
 // ── V0.3.9 R7：WebUI 内联词典 与 lib/i18n 单一词典源一致性 ─────────────────────

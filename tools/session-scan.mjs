@@ -144,6 +144,11 @@ function analyzeSessionBytes(b) {
     if (frames.length < 2) {
       const text = zstdDecodeAll(b);
       const lines = text.split('\n').filter((l) => l.trim().length > 0);
+      // 与插件 undo_scan 同步：DSH 0.1.2 空会话合法落盘为单帧仅含 header 行
+      // （0 事件），判 ok；有事件行才维持 fixable（legacy 单帧布局违规）。
+      if (lines.length <= 1) {
+        return { status: 'ok', events: 0, frames: frames.length };
+      }
       return {
         status: 'fixable',
         reason: 'single-frame layout violation',

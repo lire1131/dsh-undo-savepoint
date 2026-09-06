@@ -2,6 +2,24 @@
 
 dsh-undo-savepoint 的重要变更。日期为本地时间（UTC+8)。English version: [CHANGELOG.en.md](CHANGELOG.en.md)
 
+## [0.4.5] - 2026-09-06
+
+### 修复
+
+- **undo_scan 不再误判 DSH 0.1.2 合法空会话**。DSH 0.1.2 的空会话合法落盘为单帧且仅含 header 行（0 事件），此前每次扫描都被判为单帧布局违规并提示隔离修复。现在 0 事件判 ok，局内 undo_scan 与离线 `dsh-undo.ps1 scan` 同步生效。
+- **Windows 恢复 rename 竞态不再静默**。恢复快照时目标文件被占用导致 rename 失败，此前错误被吞掉且文件仍记为已恢复。现在回退为直接写入（内容一致，非原子），两次写入都失败才如实报告 skipped。
+- **容错补丁未命中不再静默**。DSH 版本演进后补丁子串在产物中找不到（unmatched）时此前没有任何提示，用户会误以为补丁仍在生效。现在启动时明确告警并提示离线运行 status 查看详情，插件功能不受影响，仅容错补丁失效。
+
+### 变更
+
+- **容错补丁支持多版本子串（variants）**。DSH 0.1.2-rc.1 起 `appendBatch` 签名由 meta 变为 storage，appendBatch-selfheal 补丁自带两套子串，任一形态命中即判匹配，apply 与 remove 按命中的形态精确替换。旧版 DSH 仍按原子串处理，两代产物实测各自命中。
+- **engines.dsh 覆盖 0.1.2-rc.1**。npm 安装不再拦截 0.1.2-rc.1 用户。全量测试已在 dsh-tools 0.1.2-rc.1 依赖树通过。
+- **客户端注入声明换全包名**。`dsh.client.inject` 与 `lib/client.js` 由短名（slots、locale）改为 `@deepseek-ai/dsh-client-locale`、`@deepseek-ai/dsh-client-ui-conversation`、`@deepseek-ai/dsh-client-ui-settings` 三个全包名。短名在 0.1.1 与 0.1.2 均从未生效（被静默跳过），全包名在 0.1.2 起按包依赖边生效。
+
+### 测试
+
+- smoke 245 项（新增空会话判定、补丁多版本匹配与声明回归守卫）；undo-server 冒烟 9 项、路由 parity、home-resolution、e2e-watch 14 项，全部在 0.1.2-rc.1 依赖树通过。体积与版本门禁通过。
+
 ## [0.4.4] - 2026-08-31
 
 ### 安全

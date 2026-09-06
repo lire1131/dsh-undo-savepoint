@@ -43,10 +43,27 @@ if (-not $target) {
     exit 2
 }
 
+# v0.4.5：补丁可带多版本子串（variants，DSH 0.1.2-rc.1 起 appendBatch 签名变化），
+# 无 variants 的补丁按扁平 old/new 处理（单形态）。任一形态命中即匹配。
+function Get-Variants($Patch) {
+    if ($Patch.variants) { return @($Patch.variants) }
+    return @([pscustomobject]@{ old = $Patch.old; new = $Patch.new })
+}
+
 function Get-PatchState($Text, $Patch) {
-    if ($Text.Contains($Patch.new)) { return 'applied' }
-    if ($Text.Contains($Patch.old)) { return 'missing' }
+    $variants = Get-Variants $Patch
+    foreach ($v in $variants) { if ($Text.Contains($v.new)) { return 'applied' } }
+    foreach ($v in $variants) { if ($Text.Contains($v.old)) { return 'missing' } }
     return 'unknown'
+}
+
+# 返回当前文本命中的形态：applied 返回 new 命中者，missing 返回 old 命中者，
+# 供 apply/remove 做精确替换（多版本子串互不干扰）。
+function Get-MatchingVariant($Text, $Patch) {
+    $variants = Get-Variants $Patch
+    foreach ($v in $variants) { if ($Text.Contains($v.new)) { return $v } }
+    foreach ($v in $variants) { if ($Text.Contains($v.old)) { return $v } }
+    return $null
 }
 
 $text = Get-Content -LiteralPath $target -Raw -Encoding UTF8
@@ -78,9 +95,10 @@ switch ($Action) {
             $s = Get-PatchState $text $p
             if ($s -eq 'applied') { Write-Host "  skip    $($p.id) (already applied)"; continue }
             if ($s -eq 'unknown') { Write-Host "  ERROR   $($p.id) (neither old nor new matches — target manually edited? aborting, nothing written)"; exit 1 }
+            $v = Get-MatchingVariant $text $p
             $bak = "$target.bak-$($p.id)"
             if (-not (Test-Path -LiteralPath $bak)) { Copy-Item -LiteralPath $target -Destination $bak -Force }
-            $text = $text.Replace($p.old, $p.new)
+            $text = $text.Replace($v.old, $v.new)
             $any = $true
             Write-Host "  apply   $($p.id)"
         }
@@ -97,7 +115,8 @@ switch ($Action) {
             $s = Get-PatchState $text $p
             if ($s -eq 'missing') { Write-Host "  skip    $($p.id) (already removed)"; continue }
             if ($s -eq 'unknown') { Write-Host "  ERROR   $($p.id) (cannot match new — target manually edited? aborting, nothing written)"; exit 1 }
-            $text = $text.Replace($p.new, $p.old)
+            $v = Get-MatchingVariant $text $p
+            $text = $text.Replace($v.new, $v.old)
             $any = $true
             Write-Host "  remove  $($p.id)"
         }

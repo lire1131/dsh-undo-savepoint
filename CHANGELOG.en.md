@@ -2,6 +2,24 @@
 
 Notable changes to dsh-undo-savepoint. Dates are in local time (UTC+8). 中文版:[CHANGELOG.md](CHANGELOG.md)
 
+## [0.4.5] - 2026-09-06
+
+### Fixed
+
+- **undo_scan no longer flags valid DSH 0.1.2 empty sessions**. An empty DSH 0.1.2 session is legally stored as a single frame containing only the header line (0 events), previously reported as a single-frame layout violation on every scan with a quarantine suggestion. 0 events now reports ok, in both the in-app undo_scan and the offline `dsh-undo.ps1 scan`.
+- **Windows restore rename race is no longer silent**. When a restore hit a rename failure because the target file was in use, the error was swallowed and the file was still recorded as restored. The restore now falls back to a direct write (identical content, not atomic), and only reports skipped when both writes fail.
+- **Unmatched tolerance patches are no longer silent**. When a DSH update moves the patch substrings out of the product (unmatched), nothing was reported and users could assume the patches were still applied. Startup now warns clearly and points to the offline status command. Plugin features are unaffected; only the tolerance patches stop working.
+
+### Changed
+
+- **Tolerance patches support multi-version substrings (variants)**. `appendBatch` changed its signature from meta to storage in DSH 0.1.2-rc.1, so the appendBatch-selfheal patch now carries two substring variants and matches when any one hits. apply and remove replace the exact variant found in the product. Older DSH builds keep using the original substring; both product lines were verified to match.
+- **engines.dsh covers 0.1.2-rc.1**. npm installs are no longer blocked for 0.1.2-rc.1 users. The full test suite passed on a dsh-tools 0.1.2-rc.1 dependency tree.
+- **Client inject declaration uses full package names**. `dsh.client.inject` and `lib/client.js` switched from the short names (slots, locale) to `@deepseek-ai/dsh-client-locale`, `@deepseek-ai/dsh-client-ui-conversation`, and `@deepseek-ai/dsh-client-ui-settings`. The short names never took effect in 0.1.1 or 0.1.2 (silently skipped); full names are honored through the package dependency edge since 0.1.2.
+
+### Tests
+
+- smoke 245 checks (new coverage for empty-session verdicts, multi-version patch matching, and a declaration regression guard); undo-server smoke 9, route parity, home-resolution, e2e-watch 14, all passing on the 0.1.2-rc.1 dependency tree. Size and version gates pass.
+
 ## [0.4.4] - 2026-08-31
 
 ### Security
