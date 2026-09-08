@@ -1227,13 +1227,13 @@ console.log('== B4b. patch manifest: multi-version substrings + client declarati
   // 全不命中 → unmatched（驱动启动告警）
   const rJunk = matchPatchesInText('const x = 1;', manifest.patches);
   check(rJunk.unmatched.length === manifest.patches.length, 'B4b: unrelated text reports all unmatched');
-  // 声明回归守卫：inject 全包名 + engines 覆盖 rc.1 + client.js 与 package.json 一致
+  // 声明回归守卫：package.json 用全包名（模块图层）+ engines 覆盖 rc.1 + client.js 用短服务名（cordis 服务层，与 apply 实际 ctx.locale/ctx.slots 对齐；与 dsh-better-sidebar 同构，两层有意不一致，见 09-08-fix-web-boot-plugin）
   const pkg = JSON.parse(await readFile(fileURLToPath(new URL('../package.json', import.meta.url)), 'utf8'));
   const fullNames = ['@deepseek-ai/dsh-client-locale', '@deepseek-ai/dsh-client-ui-conversation', '@deepseek-ai/dsh-client-ui-settings'];
   check(JSON.stringify(pkg.dsh.client.inject) === JSON.stringify(fullNames), 'B4b: dsh.client.inject uses full package names');
   check(pkg.engines.dsh.includes('0.1.2-rc.1'), 'B4b: engines.dsh covers 0.1.2-rc.1');
   const clientText = await readFile(fileURLToPath(new URL('../lib/client.js', import.meta.url)), 'utf8');
-  check(clientText.includes('const inject = ["@deepseek-ai/dsh-client-locale", "@deepseek-ai/dsh-client-ui-conversation", "@deepseek-ai/dsh-client-ui-settings"];'), 'B4b: client.js inject mirrors package.json');
+  check(clientText.includes('const inject = ["locale", "slots"];'), 'B4b: client.js inject uses short service names');
 }
 
 console.log('== 38. B6: undo_scan — session health scan, fixable repair, corrupt isolation (v0.3.8) ==');
