@@ -2,6 +2,16 @@
 
 dsh-undo-savepoint 的重要变更。日期为本地时间（UTC+8)。English version: [CHANGELOG.en.md](CHANGELOG.en.md)
 
+## [0.4.6] - 2026-09-08
+
+### 修复
+
+- **修复 v0.4.5 引入的 web 启动失败**（PR #36 by @JameryW）。v0.4.5 把 `lib/client.js` 的 inject 声明换成全包名，但 client 容器注册的服务名是 `locale` 与 `slots` 短名，web boot 逐名解析 inject 依赖，全包名永远解析不到，插件 entry 持续 pending，web profile 启动直接失败。现在 client.js 层恢复短服务名，`package.json` 的 `dsh.client.inject` 保持全包名（模块图层按包名声明依赖边，cordis 服务层按服务名解析，两层语义不同应当拆分）。
+
+### 测试
+
+- B4b 声明守卫改为断言两层拆分（package.json 全包名 + client.js 短服务名），防止回归重演。
+
 ## [0.4.5] - 2026-09-06
 
 ### 修复

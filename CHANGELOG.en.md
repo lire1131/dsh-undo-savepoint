@@ -2,6 +2,16 @@
 
 Notable changes to dsh-undo-savepoint. Dates are in local time (UTC+8). 中文版:[CHANGELOG.md](CHANGELOG.md)
 
+## [0.4.6] - 2026-09-08
+
+### Fixed
+
+- **Fixed the web boot failure introduced in v0.4.5** (PR #36 by @JameryW). v0.4.5 replaced the inject declaration in `lib/client.js` with full package names, but the client container registers the services under the short names `locale` and `slots`. web boot resolves every inject dependency by name, the full package names never resolved, the plugin entry stayed pending, and the web profile failed to start. The client.js layer now uses short service names again, while `dsh.client.inject` in `package.json` keeps the full package names (the module graph layer declares package dependency edges, the cordis service layer resolves by service name; the two layers declare different things and are intentionally split).
+
+### Tests
+
+- The B4b declaration guard now asserts the two-layer split (package.json full package names + client.js short service names) to prevent a regression.
+
 ## [0.4.5] - 2026-09-06
 
 ### Fixed
