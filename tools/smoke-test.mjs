@@ -1441,8 +1441,8 @@ console.log('== B7. undo_scan — session format v0/v2/v3 generation discovery +
   check(scan4.includes('ok       ') && scan4.includes('sess-v2'), 'B7: v2 session file discovered and ok');
   check(scan4.includes('summary: 10 ok, 0 fixed, 0 fixable, 0 isolated, 1 corrupt'), 'B7: v0/v2/v3 all healthy in final summary');
   // v3 事件计数：sess-v3 = 3 事件 2 帧（turn/start + assistant/message + turn/end）
-  check(/sess-v3\/session\.v3\.jsonl\.zstd \(3 events, 2 frames\)/.test(scan4), 'B7: v3 per-row event counting correct (3 events, 2 frames)');
-  check(/sess-v3-seeded\/session\.v3\.jsonl\.zstd \(3 events, 2 frames\)/.test(scan4), 'B7: migrated v3 event counting correct (end-seed + 2 events)');
+  check(/sess-v3[\\\/]session\.v3\.jsonl\.zstd \(3 events, 2 frames\)/.test(scan4), 'B7: v3 per-row event counting correct (3 events, 2 frames)');
+  check(/sess-v3-seeded[\\\/]session\.v3\.jsonl\.zstd \(3 events, 2 frames\)/.test(scan4), 'B7: migrated v3 event counting correct (end-seed + 2 events)');
 }
 await cleanup(root30);
 
