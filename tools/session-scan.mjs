@@ -158,7 +158,10 @@ function analyzeSessionBytes(b) {
     }
 
     const metas = [];
-    let expected = 0;
+    // seq 连续性起点锚定（v0.4.7，与 lib/core.mjs 同步）：v2/v3 迁移型日志
+    // （恢复历史会话生成的新版日志）首行 session/end-seed 的 seq = inheritedEventCount，
+    // 不从 0 起。首条带 seq 记录锚定基准，其后才要求严格连续。
+    let expected = null;
     let seqIssue = null;
     let events = 0;
     let badJson = null;
@@ -178,7 +181,8 @@ function analyzeSessionBytes(b) {
       for (const rec of records) {
         if (rec.noSeq) { frameEvents += 1; continue; } // 无 seq 行：计入事件但不参与连续性校验
         frameEvents += rec.last - rec.first + 1;
-        if (rec.first !== expected) seqIssue ??= { frame: i, expected, got: rec.first };
+        if (expected === null) expected = rec.first;
+        else if (rec.first !== expected) seqIssue ??= { frame: i, expected, got: rec.first };
         expected = rec.last + 1;
       }
       events += frameEvents;
@@ -272,6 +276,16 @@ function recodeSessionBytes(b, repair) {
   return out;
 }
 
+// canonical 日志名识别（v0.4.7，与 lib/core.mjs 的 parseSessionLogZstdName 同步）：
+// v0 = session.jsonl.zstd；vN（N>=2）= session.vN.jsonl.zstd。同目录多代并存取最高代。
+function parseSessionLogZstdName(name) {
+  const lower = name.toLowerCase();
+  if (lower === 'session.jsonl.zstd') return { generation: 0 };
+  const m = /^session\.v(\d+)\.jsonl\.zstd$/.exec(lower);
+  if (m) return { generation: Number(m[1]) };
+  return null;
+}
+
 async function walkSessionFiles(root) {
   const out = [];
   const stack = [root];
@@ -279,11 +293,16 @@ async function walkSessionFiles(root) {
     const dir = stack.pop();
     let entries = [];
     try { entries = await readdir(dir, { withFileTypes: true }); } catch { continue; }
+    let best = null;
     for (const e of entries) {
       const p = join(dir, e.name);
-      if (e.isDirectory()) stack.push(p);
-      else if (e.isFile() && e.name.toLowerCase() === 'session.jsonl.zstd') out.push(p);
+      if (e.isDirectory()) { stack.push(p); continue; }
+      if (!e.isFile()) continue;
+      const info = parseSessionLogZstdName(e.name);
+      if (!info) continue;
+      if (best === null || info.generation > best.generation) best = { name: e.name, generation: info.generation };
     }
+    if (best !== null) out.push(join(dir, best.name));
   }
   return out;
 }

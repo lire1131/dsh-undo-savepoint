@@ -1199,39 +1199,52 @@ const bs29 = JSON.parse(await readFile(join(snap29, 'auto', 'boot-state.json'), 
 check(bs29.crashReason === 'bundle-check', `B5: boot-state classifies bundle-check (got ${bs29.crashReason})`);
 await cleanup(root29);
 
-console.log('== B4b. patch manifest: multi-version substrings + client declaration (v0.4.5) ==');
+console.log('== B4b. patch manifest: multi-version substrings + client declaration (v0.4.5; v0.4.7 增 0.1.5 形态) ==');
 {
   const { matchPatchesInText } = await import('../lib/core.mjs');
   const manifest = JSON.parse(await readFile(fileURLToPath(new URL('../tools/dsh-patches.json', import.meta.url)), 'utf8'));
   const selfheal = manifest.patches.find((p) => p.id === 'appendBatch-selfheal');
-  const others = manifest.patches.filter((p) => p.id !== 'appendBatch-selfheal');
-  // 清单健全性：selfheal 双形态（0.1.2-alpha 线与 rc 线），子串非空且互异；其余补丁扁平
-  check(selfheal?.variants?.length === 2, 'B4b: selfheal patch carries 2 version variants');
-  check(selfheal.variants.every((v) => typeof v.old === 'string' && typeof v.new === 'string' && v.old && v.new && v.old !== v.new), 'B4b: variants non-empty and old != new');
-  check(others.every((p) => !p.variants && p.old && p.new), 'B4b: other patches stay flat (both product lines match)');
-  // alpha.2 产物形态（三补丁 old 全命中）：missing 全部、无 unmatched
-  const alphaText = [selfheal.variants[0].old, ...others.map((p) => p.old)].join('\n');
-  const rAlpha = matchPatchesInText(alphaText, manifest.patches);
-  check(rAlpha.unmatched.length === 0 && rAlpha.missing.length === 3, 'B4b: alpha-form product resolves (missing=3, unmatched=0)');
-  // rc.1 产物形态（appendBatch 签名 storage）：多版本子串生效——单形态清单此处会 unmatched
-  const rc1Text = [selfheal.variants[1].old, ...others.map((p) => p.old)].join('\n');
-  const rRc1 = matchPatchesInText(rc1Text, manifest.patches);
-  check(rRc1.unmatched.length === 0 && rRc1.missing.length === 3, 'B4b: rc.1-form product resolves via variants (regression guard)');
-  // 已应用形态（任一形态 new 命中即 applied）
-  const appliedText = [selfheal.variants[1].new, ...others.map((p) => p.new)].join('\n');
+  const tolerate = manifest.patches.find((p) => p.id === 'readFirstZstdLine-tolerant');
+  const isolate = manifest.patches.find((p) => p.id === 'listArtifacts-isolate');
+  // 清单健全性（v0.4.7 起三补丁均为双形态 variants）：子串非空且互异
+  for (const p of manifest.patches) {
+    check(p.variants?.length === 2, `B4b: ${p.id} carries 2 version variants`);
+    check(p.variants.every((v) => typeof v.old === 'string' && typeof v.new === 'string' && v.old && v.new && v.old !== v.new), `B4b: ${p.id} variants non-empty and old != new`);
+  }
+  // 0.1.2 产物形态（selfheal alpha 变体 + isolate/tolerate 首变体）：missing=3 unmatched=0
+  const a2Text = [selfheal.variants[0].old, isolate.variants[0].old, tolerate.variants[0].old].join('\n');
+  const rA2 = matchPatchesInText(a2Text, manifest.patches);
+  check(rA2.unmatched.length === 0 && rA2.missing.length === 3, 'B4b: 0.1.2-form product resolves (missing=3, unmatched=0)');
+  // 0.1.5 产物形态：isolate/tolerate 命中新变体（tolerate 两变体锚点同形态），selfheal 官方已消解 → unmatched
+  const a5Text = [isolate.variants[1].old, tolerate.variants[0].old].join('\n');
+  const rA5 = matchPatchesInText(a5Text, manifest.patches);
+  check(rA5.missing.length === 2 && rA5.unmatched.length === 1 && rA5.unmatched[0] === 'appendBatch-selfheal', 'B4b: 0.1.5-form product resolves (missing=2, selfheal unmatched as obsoleted)');
+  // 已应用形态（任一形态 new 命中即 applied；含 0.1.2 旧 tolerate 补丁的 parseHeaderMeta 形态兼容检测）
+  const appliedText = [selfheal.variants[1].new, isolate.variants[0].new, tolerate.variants[1].new].join('\n');
   const rApplied = matchPatchesInText(appliedText, manifest.patches);
-  check(rApplied.missing.length === 0 && rApplied.unmatched.length === 0, 'B4b: applied product reports ok');
-  const mixedText = [selfheal.variants[0].new, ...others.map((p) => p.new)].join('\n');
+  check(rApplied.missing.length === 0 && rApplied.unmatched.length === 0, 'B4b: applied product reports ok (incl. 0.1.2 legacy tolerate form)');
+  const mixedText = [selfheal.variants[0].new, isolate.variants[1].new, tolerate.variants[0].new].join('\n');
   const rMixed = matchPatchesInText(mixedText, manifest.patches);
   check(rMixed.missing.length === 0 && rMixed.unmatched.length === 0, 'B4b: any-variant applied counts as applied (cross-version upgrade)');
   // 全不命中 → unmatched（驱动启动告警）
   const rJunk = matchPatchesInText('const x = 1;', manifest.patches);
   check(rJunk.unmatched.length === manifest.patches.length, 'B4b: unrelated text reports all unmatched');
-  // 声明回归守卫：package.json 用全包名（模块图层）+ engines 覆盖 rc.1 + client.js 用短服务名（cordis 服务层，与 apply 实际 ctx.locale/ctx.slots 对齐；两层语义不同，有意不一致）
+  // 真实产物锚点验证（环境有产物树时执行）：0.1.5-rc.1 与 0.1.2 形态的精确子串级确认
+  for (const [label, prodPath, expect] of [
+    ['0.1.5-rc.1', '/tmp/dsh-fake15/node_modules/@deepseek-ai/dsh-session-persistence-jsonl/lib/index.js', { missing: 2, unmatched: 1 }],
+    ['0.1.2-form', '/tmp/ps1-test/node_modules/@deepseek-ai/dsh-session-persistence-jsonl/lib/index.js', { missing: 3, unmatched: 0 }],
+  ]) {
+    try {
+      const prodText = await readFile(prodPath, 'utf8');
+      const r = matchPatchesInText(prodText, manifest.patches);
+      check(r.missing.length === expect.missing && r.unmatched.length === expect.unmatched, `B4b: real ${label} product anchors match (${expect.missing} missing / ${expect.unmatched} unmatched)`);
+    } catch { /* 本机无该产物树时跳过（CI 产物树由 DSH_ROOT 场景另行覆盖） */ }
+  }
+  // 声明回归守卫：package.json 用全包名（模块图层）+ engines 覆盖 rc.1 与 0.1.5-rc.1 + client.js 用短服务名（cordis 服务层，与 apply 实际 ctx.locale/ctx.slots 对齐；两层语义不同，有意不一致）
   const pkg = JSON.parse(await readFile(fileURLToPath(new URL('../package.json', import.meta.url)), 'utf8'));
   const fullNames = ['@deepseek-ai/dsh-client-locale', '@deepseek-ai/dsh-client-ui-conversation', '@deepseek-ai/dsh-client-ui-settings'];
   check(JSON.stringify(pkg.dsh.client.inject) === JSON.stringify(fullNames), 'B4b: dsh.client.inject uses full package names');
-  check(pkg.engines.dsh.includes('0.1.2-rc.1'), 'B4b: engines.dsh covers 0.1.2-rc.1');
+  check(pkg.engines.dsh.includes('0.1.2-rc.1') && pkg.engines.dsh.includes('0.1.5-rc.1'), 'B4b: engines.dsh covers 0.1.2-rc.1 and 0.1.5-rc.1');
   const clientText = await readFile(fileURLToPath(new URL('../lib/client.js', import.meta.url)), 'utf8');
   check(clientText.includes('const inject = ["locale", "slots"];'), 'B4b: client.js inject uses short service names');
 }
@@ -1366,6 +1379,71 @@ check(scan3.includes('ok       ') && scan3.includes('sess-overlap'), 'B6: repair
 check(scan3.includes('ok       ') && scan3.includes('sess-dual'), 'B6: repaired dual overlap now ok on rescan');
 check(scan3.includes('ok       ') && scan3.includes('sess-noseq'), 'B6: no-seq file still ok on rescan');
 check(scan3.includes('summary: 6 ok, 0 fixed, 0 fixable, 0 isolated, 1 corrupt'), 'B6: final summary correct');
+
+console.log('== B7. undo_scan — session format v0/v2/v3 generation discovery + v3 事件表 (v0.4.7) ==');
+{
+  // v3 原生会话：header version=3 + 每行 {type, seq, time, data} 单事件，seq 从 0 起
+  const hdrV3 = JSON.stringify({ type: 'session', version: 3, id: 'sess-v3', createdAt: 1757500000, isSeeded: false, delegationDepth: 0 }) + '\n';
+  const v3Events = JSON.stringify({ type: 'turn/start', seq: 0, time: 1, data: { turn: 1 } }) + '\n'
+    + JSON.stringify({ type: 'assistant/message', seq: 1, time: 2, data: { turn: 1, content: [{ type: 'text', text: 'hi' }] } }) + '\n'
+    + JSON.stringify({ type: 'turn/end', seq: 2, time: 3, data: { turn: 1, reason: { kind: 'completed' } } }) + '\n';
+  const sessV3 = join(home30, 'sessions', 'sess-v3');
+  await mkdir(sessV3, { recursive: true });
+  await writeFile(join(sessV3, 'session.v3.jsonl.zstd'), Buffer.concat([
+    zlib.zstdCompressSync(Buffer.from(hdrV3, 'utf8')),
+    zlib.zstdCompressSync(Buffer.from(v3Events, 'utf8')),
+  ]));
+  // v3 迁移型（seeded）日志：恢复历史会话生成的新代文件，首行 session/end-seed 的
+  // seq = inheritedEventCount（不从 0 起），其后连续。旧行为（expected=0）会误报
+  // seq 断裂，v0.4.7 锚定起点后应判 ok。
+  const hdrV3m = JSON.stringify({ type: 'session', version: 3, id: 'sess-v3-seeded', createdAt: 1757500001, isSeeded: true, delegationDepth: 0 }) + '\n';
+  const v3Migrated = JSON.stringify({ type: 'session/end-seed', seq: 5, time: 10, data: { inherited: true } }) + '\n'
+    + JSON.stringify({ type: 'turn/start', seq: 6, time: 11, data: { turn: 2 } }) + '\n'
+    + JSON.stringify({ type: 'turn/end', seq: 7, time: 12, data: { turn: 2, reason: { kind: 'completed' } } }) + '\n';
+  const sessV3m = join(home30, 'sessions', 'sess-v3-seeded');
+  await mkdir(sessV3m, { recursive: true });
+  await writeFile(join(sessV3m, 'session.v3.jsonl.zstd'), Buffer.concat([
+    zlib.zstdCompressSync(Buffer.from(hdrV3m, 'utf8')),
+    zlib.zstdCompressSync(Buffer.from(v3Migrated, 'utf8')),
+  ]));
+  // 同目录多代并存（官方迁移语义）：v0 旧文件 immutable 保留 + v3 新文件生效，
+  // walkSessionFiles 按官方 resolveGenerationInDirectory 语义取最高代
+  const sessMix = join(home30, 'sessions', 'sess-gen-mix');
+  await mkdir(sessMix, { recursive: true });
+  await writeFile(join(sessMix, 'session.jsonl.zstd'), zlib.zstdCompressSync(Buffer.from(hdr30 + evt30, 'utf8')));
+  const mixHdr = JSON.stringify({ type: 'session', version: 3, id: 'sess-gen-mix', createdAt: 1757500002, isSeeded: false, delegationDepth: 0 }) + '\n';
+  const mixEvents = JSON.stringify({ type: 'turn/start', seq: 0, time: 1, data: { turn: 1 } }) + '\n'
+    + JSON.stringify({ type: 'turn/end', seq: 1, time: 2, data: { turn: 1, reason: { kind: 'completed' } } }) + '\n';
+  await writeFile(join(sessMix, 'session.v3.jsonl.zstd'), Buffer.concat([
+    zlib.zstdCompressSync(Buffer.from(mixHdr, 'utf8')),
+    zlib.zstdCompressSync(Buffer.from(mixEvents, 'utf8')),
+  ]));
+  // v2 会话（0.1.3/0.1.4 线产物）：version=2，物理行结构与 v3 相同
+  const hdrV2 = JSON.stringify({ type: 'session', version: 2, id: 'sess-v2', createdAt: 1757500003, isSeeded: false, delegationDepth: 0 }) + '\n';
+  const v2Events = JSON.stringify({ type: 'turn/start', seq: 0, time: 1, data: { turn: 1 } }) + '\n';
+  const sessV2 = join(home30, 'sessions', 'sess-v2');
+  await mkdir(sessV2, { recursive: true });
+  await writeFile(join(sessV2, 'session.v2.jsonl.zstd'), Buffer.concat([
+    zlib.zstdCompressSync(Buffer.from(hdrV2, 'utf8')),
+    zlib.zstdCompressSync(Buffer.from(v2Events, 'utf8')),
+  ]));
+  // 非代数命名不收录（行为保持：.bak 与非 canonical 名不进扫描）
+  const sessJunk = join(home30, 'sessions', 'sess-junkname');
+  await mkdir(sessJunk, { recursive: true });
+  await writeFile(join(sessJunk, 'session.jsonl.zstd.bak'), zlib.zstdCompressSync(Buffer.from(hdrV3, 'utf8')));
+
+  const scan4 = await run30('undo_scan', {});
+  check(scan4.includes('11 session file(s)'), 'B7: generation naming discovered (11 files incl. v0/v2/v3, sess-bad remains corrupt in place)');
+  check(scan4.includes('ok       ') && scan4.includes('sess-v3'), 'B7: native v3 session (per-row seq events) marked ok');
+  check(scan4.includes('ok       ') && scan4.includes('sess-v3-seeded'), 'B7: seeded/migrated v3 log (end-seed seq=5, anchored start) marked ok, not seq-broken');
+  check(scan4.includes('ok       ') && scan4.includes('sess-gen-mix'), 'B7: mixed-generation dir resolves to highest generation (v3 wins over v0)');
+  check(!scan4.includes('sess-junkname'), 'B7: non-canonical names (e.g. .bak) not scanned');
+  check(scan4.includes('ok       ') && scan4.includes('sess-v2'), 'B7: v2 session file discovered and ok');
+  check(scan4.includes('summary: 10 ok, 0 fixed, 0 fixable, 0 isolated, 1 corrupt'), 'B7: v0/v2/v3 all healthy in final summary');
+  // v3 事件计数：sess-v3 = 3 事件 2 帧（turn/start + assistant/message + turn/end）
+  check(/sess-v3\/session\.v3\.jsonl\.zstd \(3 events, 2 frames\)/.test(scan4), 'B7: v3 per-row event counting correct (3 events, 2 frames)');
+  check(/sess-v3-seeded\/session\.v3\.jsonl\.zstd \(3 events, 2 frames\)/.test(scan4), 'B7: migrated v3 event counting correct (end-seed + 2 events)');
+}
 await cleanup(root30);
 
 // ── V0.3.9 R7：WebUI 内联词典 与 lib/i18n 单一词典源一致性 ─────────────────────

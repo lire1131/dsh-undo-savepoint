@@ -2,6 +2,22 @@
 
 dsh-undo-savepoint 的重要变更。日期为本地时间（UTC+8)。English version: [CHANGELOG.en.md](CHANGELOG.en.md)
 
+## [0.4.7] - 2026-09-10
+
+### 新增
+
+- **适配 DSH 0.1.5 线会话格式 v3（generation 命名）**。DSH 0.1.3 起 session 日志按代数命名：v0 为 `session.jsonl.zstd`，v2/v3 为 `session.v2.jsonl.zstd` / `session.v3.jsonl.zstd`，恢复历史会话会在同目录生成更高代的新文件（旧代 immutable 保留）。undo_scan 此前只识别 v0 文件名，对 v2/v3 会话完全失明。现在局内 undo_scan 与离线 `dsh-undo.ps1 scan` 均识别三代 canonical 命名，同目录多代并存时按官方 resolveGenerationInDirectory 语义取最高代（与 DSH 自身选择一致，避免分析与过时旧代）。
+- **v3 事件表与迁移型日志判定**。v2/v3 物理行结构为每行单事件 `{type, seq, time, data}`，turn/step 边界事件保留，插件逐帧 seq 连续性校验与事件计数天然兼容。seeded 迁移型日志（恢复历史会话生成）首行 `session/end-seed` 的 seq 等于 inheritedEventCount，不从 0 起，此前按 0 起点的校验会误报 seq 断裂。现在首条带 seq 记录锚定基准，其后才要求严格连续。
+- **容错补丁覆盖 0.1.5-rc.1 产物**。readFirstZstdLine-tolerant 与 listArtifacts-isolate 各增加 0.1.5 形态变体：0.1.5 的 listArtifacts 改走 readGenerationHeader 包装，corrupt Zstandard 错误仍会拖垮整个会话列表，新变体在其 catch 中隔离坏会话；readFirstZstdLine-tolerant 新形态不依赖 0.1.5 已移除的 parseHeaderMeta 函数（改内联 JSON 校验），0.1.2 与 0.1.5 产物通用。appendBatch-selfheal 无 0.1.5 变体，官方重构已消解该竞态 bug，0.1.5 上显示为 unmatched 软告警（不影响功能）。
+
+### 变更
+
+- **engines.dsh 覆盖 0.1.5-rc.1**。npm dsh latest 已指向 0.1.5-rc.1，本声明解除安装拦截。全量测试已在 dsh 0.1.5-rc.1 依赖树（含 cordis 4.0.2）通过。
+
+### 测试
+
+- smoke 259 项（新增 B7 段 10 项：v3 原生/seeded 迁移型/v2/多代并存/非 canonical 名排除/事件计数；B4b 重写为三补丁双形态断言 + 0.1.5 与 0.1.2 真实产物锚点验证）；undo-server 冒烟 9 项、路由 parity、home-resolution、e2e-watch 14 项，全部在 0.1.5-rc.1 依赖树通过。离线 CLI 对 v3 与迁移型会话实测判定正确。补丁在 0.1.5 产物上替换后语法校验通过，readFirstZstdLine 三种输入（单帧多行返回 header 行、合规单行帧正常、首行非 JSON 返回 undefined）行为验证通过。体积与版本门禁通过。
+
 ## [0.4.6] - 2026-09-08
 
 ### 修复

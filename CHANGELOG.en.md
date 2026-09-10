@@ -2,6 +2,22 @@
 
 Notable changes to dsh-undo-savepoint. Dates are in local time (UTC+8). 中文版:[CHANGELOG.md](CHANGELOG.md)
 
+## [0.4.7] - 2026-09-10
+
+### Added
+
+- **Session format v3 support for the DSH 0.1.5 line (generation naming)**. Since DSH 0.1.3 session logs are named by generation: v0 is `session.jsonl.zstd`, v2/v3 are `session.v2.jsonl.zstd` / `session.v3.jsonl.zstd`, and resuming a historical session writes a new higher-generation file in the same directory (older generations are kept immutable). undo_scan previously recognized only the v0 filename and was completely blind to v2/v3 sessions. Both the in-app undo_scan and the offline `dsh-undo.ps1 scan` now recognize all three canonical generations; when several generations coexist in one directory the highest one is selected, matching the official resolveGenerationInDirectory semantics (consistent with what DSH itself reads, so analysis never targets a stale generation).
+- **v3 event table and migrated-log handling**. v2/v3 physical rows are single events `{type, seq, time, data}` with turn/step boundary events retained, so the per-frame seq continuity check and event counting work unchanged. Migrated logs (written when resuming a historical session) start with a `session/end-seed` row whose seq equals the inherited event count instead of 0; the previous zero-based check misreported them as seq gaps. The first seq-carrying record now anchors the baseline, and strict continuity is enforced only after it.
+- **Tolerance patches cover the 0.1.5-rc.1 product**. readFirstZstdLine-tolerant and listArtifacts-isolate each gained a 0.1.5 variant: on 0.1.5, listArtifacts goes through the readGenerationHeader wrapper and a corrupt Zstandard error still takes down the whole listing, so the new variant isolates the broken session in that catch; the new readFirstZstdLine-tolerant form drops the parseHeaderMeta dependency (removed from the 0.1.5 product) in favor of inline JSON validation and works on both the 0.1.2 and 0.1.5 products. appendBatch-selfheal has no 0.1.5 variant: the official rewrite already resolved that race, and on 0.1.5 it shows as an unmatched soft warning with no functional impact.
+
+### Changed
+
+- **engines.dsh covers 0.1.5-rc.1**. npm dsh latest already points to 0.1.5-rc.1; this declaration lifts the install gate. The full test suite passed on the dsh 0.1.5-rc.1 dependency tree (with cordis 4.0.2).
+
+### Tests
+
+- 259 smoke checks (new B7 section with 10 checks: native v3, seeded/migrated log, v2, mixed-generation directory, non-canonical name exclusion, event counting; B4b rewritten for the three dual-form patches plus real-product anchor verification against both 0.1.5 and 0.1.2 products); undo-server smoke 9, route parity, home-resolution, and e2e-watch 14 all passed on the 0.1.5-rc.1 dependency tree. The offline CLI was verified against v3 and migrated sessions. Patch application on the 0.1.5 product passed syntax checking, and readFirstZstdLine behavior was verified on three inputs (multi-line single frame returns the header line, compliant single-line frame returns normally, non-JSON first line returns undefined). Size and version gates passed.
+
 ## [0.4.6] - 2026-09-08
 
 ### Fixed
