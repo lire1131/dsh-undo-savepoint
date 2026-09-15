@@ -48,11 +48,12 @@ const BOTH = [
 /** 仅局内（DSH 宿主 REST 面）实现 */
 const HOST_ONLY = ['GET /api/undo/tree'];
 /** 仅局外 undo-server 实现 */
-const STANDALONE_ONLY = ['GET /api/undo/doctor', 'GET /api/undo/locale'];
+const STANDALONE_ONLY = ['GET /api/undo/doctor', 'POST /api/undo/doctor/fix', 'GET /api/undo/locale'];
 
 // 从源码提取路由登记：匹配 `method === 'GET' && path === '/api/undo/x'` 模式
+// （path 允许嵌套一段，如 /api/undo/doctor/fix）
 function extractRoutes(src) {
-  const re = /method\s*===\s*'(GET|POST)'\s*&&\s*path\s*===\s*'(\/api\/undo\/[a-z-]+)'/g;
+  const re = /method\s*===\s*'(GET|POST)'\s*&&\s*path\s*===\s*'(\/api\/undo\/[a-z/-]+)'/g;
   const found = new Set();
   for (const m of src.matchAll(re)) found.add(`${m[1]} ${m[2]}`);
   return found;

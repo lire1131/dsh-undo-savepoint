@@ -27,6 +27,7 @@
       makeSnap: '创建手动快照', reasonPlaceholder: '说明（可选）', makeSnapConfirm: '创建',
       diagnose: '诊断', doctorTitle: '诊断报告', doctorOk: '健康', doctorWarn: '提醒', doctorErr: '异常',
       doctorHealthy: '一切健康 🎉', doctorUnhealthy: '发现异常，建议处理。', doctorHead: '项检查',
+      doctorFix: '修复可修项', doctorFixable: '可修复', doctorFixed: '已修复', doctorFailed: '失败', doctorSnapshot: '修复前快照',
       msgBtn: '对话撤回', msgTitle: '对话级撤回', msgEmpty: '暂无可撤回的消息批次', msgUndo: '撤回', msgUndoClick: '撤回该消息批次的文件改动？', msgUndone: '已撤回',
       setAuto: '自动保存', setDebounce: '防抖(ms)', setKeep: '自动档保留', setKeepPre: '后悔档保留', setCleanup: '自动清理', setManualDir: '手动快照目录', setAutoDir: '自动快照目录', setSensitive: '敏感模式', setSensitiveRedact: '脱敏(默认)', setSensitiveKeep: '明文(旧行为)', setPluginDirs: '插件目录白名单(逗号分隔,留空=自动发现)', setWorkspaceDirs: '跟踪工作区目录(逗号/分号分隔,非空=覆盖默认当前目录,留空=仅当前目录)', setDesktop: '桌面快捷方式', setDesktopInfo: '桌面目录', saved: '设置已保存', setSchedule: '定时快照', setScheduleEnabled: '启用定时快照', setScheduleMs: '间隔(分钟,≥1)', note: '备注', tags: '标签', editNote: '编辑备注/标签', noteEmpty: '无备注', noteSaved: '备注已保存', noteFailed: '保存失败', exportPass: '导出密码(可选，加密)', importPass: '导入密码', encrypted: '已加密', needPass: '该导出已加密，需密码', tree: '目录树', notePlaceholder: '备注内容(可选)', tagsPlaceholder: '标签，逗号分隔(可选)', today: '今天', yesterday: '昨天'
     },
@@ -51,6 +52,7 @@
       makeSnap: 'Create manual snapshot', reasonPlaceholder: 'reason (optional)', makeSnapConfirm: 'Create',
       diagnose: 'Diagnose', doctorTitle: 'Diagnostic report', doctorOk: 'healthy', doctorWarn: 'warning', doctorErr: 'error',
       doctorHealthy: 'All healthy 🎉', doctorUnhealthy: 'Issues found — check the report.', doctorHead: 'checks',
+      doctorFix: 'Repair fixable', doctorFixable: 'fixable', doctorFixed: 'fixed', doctorFailed: 'failed', doctorSnapshot: 'pre-fix snapshot',
       msgBtn: 'Message undo', msgTitle: 'Message-level undo', msgEmpty: 'No message batches to undo', msgUndo: 'Undo', msgUndoClick: 'Undo the file changes of this message batch?', msgUndone: 'undone',
       setAuto: 'Auto-save', setDebounce: 'Debounce (ms)', setKeep: 'Auto snapshots kept', setKeepPre: 'Pre-restore kept', setCleanup: 'Auto-cleanup', setManualDir: 'Manual snapshot dir', setAutoDir: 'Auto snapshot dir', setSensitive: 'Sensitive mode', setSensitiveRedact: 'Redact (default)', setSensitiveKeep: 'Plaintext (legacy)', setPluginDirs: 'Plugin dirs whitelist (comma-separated, empty = auto)', setWorkspaceDirs: 'Tracked workspace dirs (comma/semicolon separated; non-empty replaces current-dir scope, empty = current dir only)', setDesktop: 'Desktop shortcut', setDesktopInfo: 'Desktop dir', saved: 'Settings saved', setSchedule: 'Scheduled snapshots', setScheduleEnabled: 'Enable scheduled snapshots', setScheduleMs: 'Interval (min, ≥1)', note: 'note', tags: 'tags', editNote: 'Edit note/tags', noteEmpty: 'no note', noteSaved: 'Note saved', noteFailed: 'Save failed', exportPass: 'Export password (optional, encrypts)', importPass: 'Import password', encrypted: 'encrypted', needPass: 'This export is encrypted — password required', tree: 'tree', notePlaceholder: 'note (optional)', tagsPlaceholder: 'tags, comma-separated (optional)', today: 'Today', yesterday: 'Yesterday'
     },
@@ -342,17 +344,39 @@
   $('#btn-prune').addEventListener('click', async () => {
     try { await post('/api/undo/prune'); toast(`${t('prune')} ✓`, 'ok'); await refresh(); } catch (e) { toast(e.message, 'err'); }
   });
+  const doctorPanel = (d, extra) => {
+    const banner = d.healthy ? `✅ ${t('doctorHealthy')}` : `⚠️ ${t('doctorUnhealthy')}`;
+    const rows = (d.checks ?? []).map((c) => {
+      const mark = c.level === 'err' ? '❌' : c.level === 'warn' ? '⚠️' : '✅';
+      const badge = c.fixable ? ` <span class="chip warn">${t('doctorFixable')}</span>` : '';
+      return `<div class="doc-row ${c.level}"><span class="doc-mark">${mark}</span><div><b>${esc(c.name)}${badge}</b><div class="doc-detail">${esc(c.detail)}</div>${c.fix ? `<div class="doc-fix">→ ${esc(c.fix)}</div>` : ''}</div></div>`;
+    }).join('');
+    const n = d.fixable ?? 0;
+    const note = extra
+      ? `<div class="doc-summary"><span class="doc-counts">${t('doctorFixed')} ${extra.fixed ?? 0} · ${t('doctorFailed')} ${extra.failed ?? 0}${extra.snapshotId ? ` · ${t('doctorSnapshot')} ${esc(extra.snapshotId)}` : ''}</span></div>`
+      : '';
+    return `<div class="panel-head"><h3>${t('doctorTitle')}</h3><span class="chip ${d.healthy ? 'ok' : 'warn'}">${d.healthy ? t('doctorOk') : t('doctorWarn')}</span><button class="close-x" data-close>×</button></div>
+      <div class="panel-body"><div class="doc-summary">${banner}<span class="doc-counts">${d.summary?.ok ?? 0} ${t('doctorOk')} · ${d.summary?.warn ?? 0} ${t('doctorWarn')} · ${d.summary?.err ?? 0} ${t('doctorErr')}</span></div>${note}${rows}</div>
+      <div class="panel-foot"><button class="btn" data-close>${t('close')}</button>${n > 0 ? `<button class="btn btn-primary" id="doctor-fix">🔧 ${t('doctorFix')} (${n})</button>` : ''}</div>`;
+  };
+  const attachDoctorFix = () => {
+    const btn = $('#doctor-fix');
+    if (!btn) return;
+    btn.addEventListener('click', async () => {
+      btn.disabled = true;
+      try {
+        const r = await post('/api/undo/doctor/fix');
+        toast(`${t('doctorFix')} ✓ ${r.fixed ?? 0}`, 'ok');
+        openPanel(doctorPanel(r, { fixed: r.fixed ?? 0, failed: r.failed ?? 0, snapshotId: r.snapshotId }));
+        attachDoctorFix();
+        await refresh();
+      } catch (e) { toast(e.message, 'err'); btn.disabled = false; }
+    });
+  };
   $('#btn-doctor').addEventListener('click', async () => {
     try {
-      const d = await get('/api/undo/doctor');
-      const banner = d.healthy ? `✅ ${t('doctorHealthy')}` : `⚠️ ${t('doctorUnhealthy')}`;
-      const rows = (d.checks ?? []).map((c) => {
-        const mark = c.level === 'err' ? '❌' : c.level === 'warn' ? '⚠️' : '✅';
-        return `<div class="doc-row ${c.level}"><span class="doc-mark">${mark}</span><div><b>${esc(c.name)}</b><div class="doc-detail">${esc(c.detail)}</div>${c.fix ? `<div class="doc-fix">→ ${esc(c.fix)}</div>` : ''}</div></div>`;
-      }).join('');
-      openPanel(`<div class="panel-head"><h3>${t('doctorTitle')}</h3><span class="chip ${d.healthy ? 'ok' : 'warn'}">${d.healthy ? t('doctorOk') : t('doctorWarn')}</span><button class="close-x" data-close>×</button></div>
-        <div class="panel-body"><div class="doc-summary">${banner}<span class="doc-counts">${d.summary?.ok ?? 0} ${t('doctorOk')} · ${d.summary?.warn ?? 0} ${t('doctorWarn')} · ${d.summary?.err ?? 0} ${t('doctorErr')}</span></div>${rows}</div>
-        <div class="panel-foot"><button class="btn" data-close>${t('close')}</button></div>`);
+      openPanel(doctorPanel(await get('/api/undo/doctor'), null));
+      attachDoctorFix();
     } catch (e) { toast(e.message, 'err'); }
   });
   $('#btn-export').addEventListener('click', () => {

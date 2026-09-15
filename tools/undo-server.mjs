@@ -33,6 +33,7 @@ import {
   publicSettings,
   findSnapshot,
   runDoctor,
+  runDoctorFix,
   diffSnapshotStructured,
   restore,
   createSnapshot,
@@ -208,6 +209,12 @@ const server = createServer(async (req, res) => {
       }
       if (method === 'GET' && path === '/api/undo/doctor') {
         return send(res, 200, { ok: true, ...await runDoctor(cfg) });
+      }
+      if (method === 'POST' && path === '/api/undo/doctor/fix') {
+        // 预检自愈（v0.4.8）：清单 BOM / patch 重复 loader id / 悬空 junction 等定点修复，
+        // 修前先落一个手动快照；返回修复清单 + 复查报告（字段与 GET doctor 同形）。
+        const r = await runDoctorFix(cfg);
+        return send(res, 200, { ok: true, snapshotId: r.snapshotId ?? null, applied: r.applied ?? [], fixed: r.fixed ?? 0, failed: r.failed ?? 0, before: r.before, ...r.report });
       }
       if (method === 'GET' && path === '/api/undo/diff') {
         const id = url.searchParams.get('id') ?? '';
