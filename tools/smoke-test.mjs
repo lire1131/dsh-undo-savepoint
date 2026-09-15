@@ -1213,12 +1213,18 @@ console.log('== B4b. patch manifest: multi-version substrings + client declarati
   }
   // 0.1.2 产物形态（selfheal alpha 变体 + isolate/tolerate 首变体）：missing=3 unmatched=0
   const a2Text = [selfheal.variants[0].old, isolate.variants[0].old, tolerate.variants[0].old].join('\n');
-  const rA2 = matchPatchesInText(a2Text, manifest.patches);
+  const rA2 = matchPatchesInText(a2Text, manifest.patches, '0.1.2-rc.1');
   check(rA2.unmatched.length === 0 && rA2.missing.length === 3, 'B4b: 0.1.2-form product resolves (missing=3, unmatched=0)');
-  // 0.1.5 产物形态：isolate/tolerate 命中新变体（tolerate 两变体锚点同形态），selfheal 官方已消解 → unmatched
+  // 0.1.5 产物形态：isolate/tolerate 命中新变体（tolerate 两变体锚点同形态），selfheal 无锚点。
+  // 传版本 → selfheal 判 obsoleted（官方 appendBatch 重写已消解，属预期）；不传版本 → 保持 unmatched 保守语义
   const a5Text = [isolate.variants[1].old, tolerate.variants[0].old].join('\n');
-  const rA5 = matchPatchesInText(a5Text, manifest.patches);
-  check(rA5.missing.length === 2 && rA5.unmatched.length === 1 && rA5.unmatched[0] === 'appendBatch-selfheal', 'B4b: 0.1.5-form product resolves (missing=2, selfheal unmatched as obsoleted)');
+  const rA5 = matchPatchesInText(a5Text, manifest.patches, '0.1.5-rc.2');
+  check(rA5.missing.length === 2 && rA5.unmatched.length === 0 && rA5.obsoleted.length === 1 && rA5.obsoleted[0] === 'appendBatch-selfheal', 'B4b: 0.1.5-form product resolves (missing=2, selfheal obsoleted)');
+  const rA5NoVer = matchPatchesInText(a5Text, manifest.patches);
+  check(rA5NoVer.unmatched.length === 1 && rA5NoVer.obsoleted.length === 0, 'B4b: without a version an anchor-less patch stays unmatched (conservative)');
+  const rA5AsOld = matchPatchesInText(a5Text, manifest.patches, '0.1.2-rc.1');
+  check(rA5AsOld.obsoleted.length === 0 && rA5AsOld.unmatched.length === 1, 'B4b: obsoletedOn applies only to the declared version line');
+  check(Array.isArray(selfheal.obsoletedOn) && selfheal.obsoletedOn.includes('0.1.5'), 'B4b: manifest declares appendBatch-selfheal obsoleted on 0.1.5');
   // 已应用形态（任一形态 new 命中即 applied；含 0.1.2 旧 tolerate 补丁的 parseHeaderMeta 形态兼容检测）
   const appliedText = [selfheal.variants[1].new, isolate.variants[0].new, tolerate.variants[1].new].join('\n');
   const rApplied = matchPatchesInText(appliedText, manifest.patches);
@@ -1226,25 +1232,29 @@ console.log('== B4b. patch manifest: multi-version substrings + client declarati
   const mixedText = [selfheal.variants[0].new, isolate.variants[1].new, tolerate.variants[0].new].join('\n');
   const rMixed = matchPatchesInText(mixedText, manifest.patches);
   check(rMixed.missing.length === 0 && rMixed.unmatched.length === 0, 'B4b: any-variant applied counts as applied (cross-version upgrade)');
-  // 全不命中 → unmatched（驱动启动告警）
+  // 全不命中 → unmatched（驱动启动告警）；带 0.1.5 版本时清单声明消解的补丁归入 obsoleted
   const rJunk = matchPatchesInText('const x = 1;', manifest.patches);
   check(rJunk.unmatched.length === manifest.patches.length, 'B4b: unrelated text reports all unmatched');
-  // 真实产物锚点验证（环境有产物树时执行）：0.1.5-rc.1 与 0.1.2 形态的精确子串级确认
-  for (const [label, prodPath, expect] of [
-    ['0.1.5-rc.1', '/tmp/dsh-fake15/node_modules/@deepseek-ai/dsh-session-persistence-jsonl/lib/index.js', { missing: 2, unmatched: 1 }],
-    ['0.1.2-form', '/tmp/ps1-test/node_modules/@deepseek-ai/dsh-session-persistence-jsonl/lib/index.js', { missing: 3, unmatched: 0 }],
+  const rJunk15 = matchPatchesInText('const x = 1;', manifest.patches, '0.1.5-rc.2');
+  check(rJunk15.unmatched.length === 2 && rJunk15.obsoleted.length === 1, 'B4b: unrelated text on 0.1.5 reports the obsoleted selfheal');
+  // 真实产物锚点验证（环境有产物树时执行）：0.1.5-rc.1 / 0.1.5-rc.2 / 0.1.2 形态的精确子串级确认。
+  // 0.1.5-rc.2 与 rc.1 的目标文件逐字节相同，判定应完全一致；三个路径均可用环境变量指向本地产物树。
+  for (const [label, version, prodPath, expect] of [
+    ['0.1.5-rc.1', '0.1.5-rc.1', process.env.DSH_PRODUCT_TREE_RC1 ?? '/tmp/dsh-fake15/node_modules/@deepseek-ai/dsh-session-persistence-jsonl/lib/index.js', { missing: 2, obsoleted: 1 }],
+    ['0.1.5-rc.2', '0.1.5-rc.2', process.env.DSH_PRODUCT_TREE_RC2 ?? '/tmp/dsh-fake15-rc2/node_modules/@deepseek-ai/dsh-session-persistence-jsonl/lib/index.js', { missing: 2, obsoleted: 1 }],
+    ['0.1.2-form', '0.1.2-rc.1', process.env.DSH_PRODUCT_TREE_012 ?? '/tmp/ps1-test/node_modules/@deepseek-ai/dsh-session-persistence-jsonl/lib/index.js', { missing: 3, obsoleted: 0 }],
   ]) {
     try {
       const prodText = await readFile(prodPath, 'utf8');
-      const r = matchPatchesInText(prodText, manifest.patches);
-      check(r.missing.length === expect.missing && r.unmatched.length === expect.unmatched, `B4b: real ${label} product anchors match (${expect.missing} missing / ${expect.unmatched} unmatched)`);
+      const r = matchPatchesInText(prodText, manifest.patches, version);
+      check(r.missing.length === expect.missing && r.unmatched.length === 0 && r.obsoleted.length === expect.obsoleted, `B4b: real ${label} product anchors match (${expect.missing} missing / ${expect.obsoleted} obsoleted)`);
     } catch { /* 本机无该产物树时跳过（CI 产物树由 DSH_ROOT 场景另行覆盖） */ }
   }
   // 声明回归守卫：package.json 用全包名（模块图层）+ engines 覆盖 rc.1 与 0.1.5-rc.1 + client.js 用短服务名（cordis 服务层，与 apply 实际 ctx.locale/ctx.slots 对齐；两层语义不同，有意不一致）
   const pkg = JSON.parse(await readFile(fileURLToPath(new URL('../package.json', import.meta.url)), 'utf8'));
   const fullNames = ['@deepseek-ai/dsh-client-locale', '@deepseek-ai/dsh-client-ui-conversation', '@deepseek-ai/dsh-client-ui-settings'];
   check(JSON.stringify(pkg.dsh.client.inject) === JSON.stringify(fullNames), 'B4b: dsh.client.inject uses full package names');
-  check(pkg.engines.dsh.includes('0.1.2-rc.1') && pkg.engines.dsh.includes('0.1.5-rc.1'), 'B4b: engines.dsh covers 0.1.2-rc.1 and 0.1.5-rc.1');
+  check(pkg.engines.dsh.includes('0.1.2-rc.1') && pkg.engines.dsh.includes('0.1.5-rc.1') && pkg.engines.dsh.includes('0.1.5-rc.2'), 'B4b: engines.dsh covers 0.1.2-rc.1, 0.1.5-rc.1 and 0.1.5-rc.2');
   const clientText = await readFile(fileURLToPath(new URL('../lib/client.js', import.meta.url)), 'utf8');
   check(clientText.includes('const inject = ["locale", "slots"];'), 'B4b: client.js inject uses short service names');
 }
@@ -1680,6 +1690,88 @@ await cleanup(root30);
   check(y.includes('# credentials') && y.split('\n').includes('') && e.includes('# comment') && e.split('\n').includes(''), '#35: comments and blank lines preserved');
   check(core.redactYamlContent(y) === y && core.redactEnvContent(e) === e, '#35: redaction is idempotent');
   check(y.includes('apiKey: ***REDACTED***') && y.includes('quoted: ***REDACTED***') && e.includes('API_KEY=***REDACTED***') && e.includes('export TOKEN="***REDACTED***"'), '#35: plain key-value forms still redacted (regression)');
+}
+
+// ── T1. #37 局外 WebUI 深色模式 + 主题 token 审计（v0.4.8）────────────────────
+console.log('== T1. #37 offline WebUI dark mode + theme token audit (v0.4.8) ==');
+{
+  const repoRoot = join(dirname(fileURLToPath(import.meta.url)), '..');
+  const html = await readFile(join(repoRoot, 'tools', 'webui', 'index.html'), 'utf8');
+  const css = await readFile(join(repoRoot, 'tools', 'webui', 'styles.css'), 'utf8');
+  const appJs = await readFile(join(repoRoot, 'tools', 'webui', 'app.js'), 'utf8');
+
+  // 内联解析器必须排在样式表之前，否则首帧按亮色画完再翻黑，会闪一下白。
+  const atResolver = html.indexOf('dsh-undo-theme');
+  const atStyles = html.indexOf('styles.css');
+  check(atResolver > -1 && atStyles > -1 && atResolver < atStyles, '#37: theme resolver precedes the stylesheet (no flash of light)');
+  check(html.includes('prefers-color-scheme: dark') && html.includes('matchMedia'), '#37: resolver honours prefers-color-scheme');
+  check(html.includes('id="btn-theme"'), '#37: three-state theme button in the topbar');
+  check(!/data-theme="auto"/.test(html), '#37: data-theme never carries the auto preference');
+  check(appJs.includes("'dsh-undo-theme'"), '#37: app.js reads the same localStorage key');
+  check(appJs.includes("const THEME_STATES = ['auto', 'light', 'dark']"), '#37: three-state cycle auto -> light -> dark');
+  check(appJs.includes("matchMedia('(prefers-color-scheme: dark)')"), '#37: app.js resolves auto against the system');
+  check(appJs.includes("addEventListener('change'"), '#37: system theme change re-resolves auto');
+  check(appJs.includes("setAttribute('data-theme', resolved)"), '#37: resolved theme written to data-theme');
+
+  // 真跑一遍头部解析器：抽出内联脚本体，用最小 DOM 桩验证三态解析行为，
+  // 而不是只匹配字符串。局外 WebUI 的正确性最终就落在这一段上。
+  const resolverSrc = (html.match(/<script>([\s\S]*?)<\/script>/) ?? [])[1] ?? '';
+  check(resolverSrc.includes('dsh-undo-theme'), '#37: inline resolver script body extracted');
+  const runResolver = (stored, systemDark) => {
+    let theme = null, prefAttr = null;
+    const doc = { documentElement: { setAttribute: (k, v) => { if (k === 'data-theme') theme = v; if (k === 'data-theme-pref') prefAttr = v; } } };
+    const win = { matchMedia: () => ({ matches: systemDark }) };
+    const store = { getItem: () => stored };
+    new Function('window', 'document', 'localStorage', resolverSrc)(win, doc, store);
+    return { theme, prefAttr };
+  };
+  check(runResolver(null, true).theme === 'dark', '#37: unset preference + dark system -> data-theme=dark');
+  check(runResolver(null, false).theme === 'light', '#37: unset preference + light system -> data-theme=light');
+  check(runResolver('auto', true).theme === 'dark', '#37: auto + dark system -> data-theme=dark');
+  check(runResolver('light', true).theme === 'light', '#37: explicit light wins over a dark system');
+  check(runResolver('dark', false).theme === 'dark', '#37: explicit dark wins over a light system');
+  const bogus = runResolver('bogus', true);
+  check(bogus.prefAttr === 'auto' && bogus.theme === 'dark', '#37: unknown stored value falls back to auto');
+
+  // 亮暗两套变量必须一一对应（布局变量与两种模式共用的状态色不在暗色块里重复声明）。
+  const blockVars = (sel) => {
+    const i = css.indexOf(sel);
+    if (i < 0) return null;
+    const open = css.indexOf('{', i);
+    const close = css.indexOf('}', open);
+    return [...css.slice(open, close).matchAll(/(--[a-z0-9-]+)\s*:/g)].map((m) => m[1]).sort();
+  };
+  const lightVars = blockVars(':root {');
+  const darkVars = blockVars('[data-theme="dark"] {');
+  check(Array.isArray(lightVars) && lightVars.length > 0 && Array.isArray(darkVars) && darkVars.length > 0, '#37: light and dark palettes both parse');
+  const sharedAcrossThemes = new Set(['--radius', '--safe', '--state-error', '--state-success', '--state-warn']);
+  const missingInDark = (lightVars ?? []).filter((v) => !sharedAcrossThemes.has(v) && !(darkVars ?? []).includes(v));
+  check(missingInDark.length === 0, `#37: every light colour token has a dark counterpart (missing: ${missingInDark.join(',') || 'none'})`);
+  check(/color-scheme:\s*light/.test(css) && /color-scheme:\s*dark/.test(css), '#37: color-scheme declared so native widgets follow');
+
+  // 主题 token 审计：client.js 用到的 --dsw-* 必须都在允许清单里（I12/I13 的根因守卫）。
+  const allow = new Set((await readFile(join(repoRoot, 'tools', 'dsw-theme-tokens.txt'), 'utf8'))
+    .split(/\r?\n/).map((l) => l.trim()).filter((l) => l.startsWith('--dsw-')));
+  check(allow.size >= 10, `theme token allowlist loaded (${allow.size} tokens)`);
+  const clientJs = await readFile(join(repoRoot, 'lib', 'client.js'), 'utf8');
+  const usedTokens = [...new Set([...clientJs.matchAll(/--dsw-[a-z0-9-]+/g)].map((m) => m[0]))].sort();
+  const unknownTokens = usedTokens.filter((tk) => !allow.has(tk));
+  check(unknownTokens.length === 0, `#37/I13: client.js only uses known theme tokens (unknown: ${unknownTokens.join(',') || 'none'})`);
+  check(usedTokens.length >= 10, `client.js uses ${usedTokens.length} theme tokens`);
+  check(!/--dsw-(state|bg|border|label|interactive)-/.test(clientJs), '#37/I13: no legacy non-alias token names in client.js');
+
+  // 隔离闸门：DSH_ROOT 只有确实是一份产品树时才触发严格模式（与依赖树语义共存）。
+  const { isDshProductTree } = await import('../lib/core.mjs');
+  check((await isDshProductTree(join(root, 'no-such-tree'))) === false, 'isolation: a plain directory is not a product tree');
+  check((await isDshProductTree('')) === false, 'isolation: empty DSH_ROOT never enters strict mode');
+  const fakeTree = join(root, 'fake-product');
+  await mkdir(join(fakeTree, 'lib'), { recursive: true });
+  await writeFile(join(fakeTree, 'package.json'), '{"name":"@deepseek-ai/dsh","version":"0.0.0"}\n');
+  check((await isDshProductTree(fakeTree)) === false, 'isolation: package.json alone is not a product tree');
+  await writeFile(join(fakeTree, 'lib', 'bin.js'), '// dsh bin\n');
+  check((await isDshProductTree(fakeTree)) === true, 'isolation: package.json + lib/bin.js => strict mode on');
+  const ps1 = await readFile(join(repoRoot, 'tools', 'apply-dsh-patches.ps1'), 'utf8');
+  check(ps1.includes('lib\\bin.js') && ps1.includes('$productTree'), 'isolation: PowerShell side applies the same product-tree gate');
 }
 
 await rm(root, { recursive: true, force: true });

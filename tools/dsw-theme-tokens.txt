@@ -1,0 +1,20 @@
+# dsh-undo-savepoint --dsw-* 主题 token 允许清单（smoke 第 40 段用它审计 lib/client.js）
+# 这 14 个变量已逐一在 DSH 0.1.5-rc.2 的 @deepseek-ai/dsh-client-ui-theme 里定位到定义，
+# 主题包共 357 个 --dsw-* token，此处只固化插件实际用到的那批。
+# 判定：lib/client.js 里出现清单之外的 --dsw-* 变量，即视为拼错或已改名的变量，
+# 也就是 I12 / I13 那类主题变量失配后静默回落硬编码兜底值的根因。
+# DSH 升版后要新增变量，先确认它在主题包里确实存在，再补进本清单。
+--dsw-alias-bg-base
+--dsw-alias-bg-layer-1
+--dsw-alias-bg-mask-1
+--dsw-alias-border-l1
+--dsw-alias-border-l2
+--dsw-alias-border-l3
+--dsw-alias-interactive-bg-hover
+--dsw-alias-label-primary
+--dsw-alias-label-secondary
+--dsw-alias-label-tertiary
+--dsw-alias-state-business-primary
+--dsw-alias-state-error-primary
+--dsw-alias-state-success-primary
+--dsw-specific-tip
