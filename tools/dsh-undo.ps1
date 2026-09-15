@@ -12,19 +12,21 @@
 #   .\dsh-undo.ps1 prune [-KeepAuto 20]
 #   .\dsh-undo.ps1 status
 #   .\dsh-undo.ps1 settings                                   # show current settings
-#   .\dsh-undo.ps1 scan [--fix] [-Label <home>]               # scan/repair DSH session files (v0.3.8; v0.4.2 adds synthetic-closer seq overlap repair)
+#   .\dsh-undo.ps1 scan [-Fix] [-Label <home>]                 # scan/repair DSH session files (v0.3.8; v0.4.2 adds synthetic-closer seq overlap repair)
+#   .\dsh-undo.ps1 doctor [-Fix] [-Label <profile>]            # preflight check before boot: manifest/bundles/junction/loader-id (v0.4.8; -Fix repairs what it can)
 #
 # Snapshot stores: D:\dsh\undo-snapshots\manual and \auto (shared with the
 # dsh-undo DSH plugin; legacy flat snapshots are read too).
 
 param(
     [Parameter(Position = 0)]
-    [ValidateSet('snapshot', 'list', 'diff', 'restore', 'undo', 'redo', 'remove', 'prune', 'export', 'import', 'status', 'settings', 'safe-mode', 'recent', 'scan')]
+    [ValidateSet('snapshot', 'list', 'diff', 'restore', 'undo', 'redo', 'remove', 'prune', 'export', 'import', 'status', 'settings', 'safe-mode', 'recent', 'scan', 'doctor')]
     [string]$Command = 'status',
     [string]$Label = '',
     [string]$Id = '',
     [int]$KeepAuto = 20,
     [switch]$Force,
+    [switch]$Fix,
     [switch]$SyncDeps
 )
 
@@ -198,9 +200,9 @@ switch ($Command) {
         }
     }
     'scan' {
-        # dsh-undo.ps1 scan [--fix] [-Label <home>]（v0.3.8, B6；v0.4.2 增加 synthetic-closer seq 重叠修复）
-        # 离线会话扫描/修复：DSH 起不来时也能用；--fix 通过 -Label 传入。
-        $fix = $false
+        # dsh-undo.ps1 scan [-Fix] [-Label <home>]（v0.3.8, B6；v0.4.2 增加 synthetic-closer seq 重叠修复）
+        # 离线会话扫描/修复：DSH 起不来时也能用；-Fix（旧写法 -Label --fix 仍兼容）。
+        $fix = [bool]$Fix
         $homeArg = $null
         if ($Label) {
             if ($Label -eq '--fix') { $fix = $true } else { $homeArg = $Label }
@@ -218,6 +220,29 @@ switch ($Command) {
         $nodeArgs = @($scriptPath)
         if ($fix) { $nodeArgs += '--fix' }
         $nodeArgs += $homeArg
+        & node $nodeArgs
+        exit $LASTEXITCODE
+    }
+    'doctor' {
+        # dsh-undo.ps1 doctor [-Fix] [-Label <profile>]（v0.4.8 预检 A）
+        # 离线启动体检：profile 清单 / bundles / junction / loader id 这些硬失败都
+        # 发生在任何插件挂载之前，进程内的启动自愈够不着，DSH 起不来时只有它可用。
+        # -Fix 定点修复可修项（旧写法 -Label --fix 仍兼容，与 scan 的风格一致）。
+        $fix = [bool]$Fix
+        $profileArg = $null
+        if ($Label) {
+            if ($Label -eq '--fix') { $fix = $true } else { $profileArg = $Label }
+        }
+        if (-not (Get-Command node -ErrorAction SilentlyContinue)) {
+            Write-Host 'doctor requires Node.js; please install Node.js first.'; exit 1
+        }
+        $scriptPath = Join-Path $PSScriptRoot 'doctor.mjs'
+        if (-not (Test-Path -LiteralPath $scriptPath)) {
+            Write-Host "doctor.mjs not found: $scriptPath"; exit 1
+        }
+        $nodeArgs = @($scriptPath)
+        if ($fix) { $nodeArgs += '--fix' }
+        if ($profileArg) { $nodeArgs += @('-p', $profileArg) }
         & node $nodeArgs
         exit $LASTEXITCODE
     }

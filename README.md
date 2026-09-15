@@ -36,7 +36,7 @@
 | **会话文件扫描修复** | `undo_scan` 扫描 `<home>/sessions/**/session.jsonl.zstd`：单帧布局违规（8/18 崩溃根因）与 synthetic-closer seq 重叠（撤销/快照还原后的中断恢复 seq 重叠）可一键修复（原件留 `.bak` + 隔离区副本）；无法解码的只隔离不动；DSH 起不来时用 `dsh-undo.ps1 scan [--fix]` 离线处理（需 Node ≥22.15，Node 20 下降级为提示） |
 | **快照时间线（Time Machine）** | 快照按日期分组卡片化（备注 / 标签芯片，尊重 `prefers-reduced-motion`）+ 文件级 diff（新增 / 删除行高亮、目录树导航、逐文件浏览）+ 一键回滚 |
 | **快照管理** | 备注 / 标签（`undo_note`，时间线可直接编辑）、定时快照（间隔制，自动建档 + 保留清理）、孤儿 blob GC（`undo_compact`，释放磁盘）、ZIP 导出 / 导入（可选 AES-256-GCM 加密，兼容 PowerShell 明文互操作） |
-| **一键诊断 `undo_doctor`** | 检查快照目录可写性、blob 完整性（缺失 / 孤儿）、设置文件健康、快照规模分布，输出 ok / warn / err 结构化报告与修复提示 |
+| **一键诊断与启动预检 `undo_doctor`** | 存储侧：快照目录可写性、blob 完整性（缺失 / 孤儿）、设置文件健康、快照规模分布。启动侧预检那些会让 DSH 在挂载任何插件之前就崩掉的硬失败：profile 清单 BOM / JSON / 结构、`dsh.profile.bundles` 逐项可解析、`patchReload` 取值、`link:` junction 落点、patch 里重复的 loader id、上次启动未完成。输出 ok / warn / err 结构化报告，可修项标 `[fixable]`，对话里 `undo_doctor fix=true`、离线 `dsh-undo.ps1 doctor -Fix`、局外 WebUI 诊断面板的「修复可修项」按钮都能一键修复（改前先落手动快照，修完自动复查） |
 | **跨机迁移安全** | 恢复前自动预检缺失插件并明确提示；快照可一键导出 / 导入 ZIP 迁移（见 [docs/migration.md](docs/migration.md)） |
 | **局外急救** | DSH 挂了也能用：WebUI + GUI 窗口 + CLI + 桌面快捷方式，时间线 / 回滚 / 对比 / 安全模式 / 诊断一应俱全 |
 
@@ -146,7 +146,7 @@ mklink /J "<你的DSH安装>\node_modules\dsh-undo-savepoint" "D:\dsh\plugins\ds
 node tools/undo-server.mjs     # 或双击 launch-undo.bat / .command / .sh / .desktop
 ```
 
-拉起纯本地 `127.0.0.1` 服务器 + 内置网页：时间线 / 回滚 / 对比 / 安全模式 / 诊断，双击即用，不依赖 DSH。插件加载后还会自动在桌面创建「dsh-undo-savepoint」快捷方式，双击直接打开。
+拉起纯本地 `127.0.0.1` 服务器 + 内置网页：时间线 / 回滚 / 对比 / 安全模式 / 诊断，双击即用，不依赖 DSH。插件加载后还会自动在桌面创建「dsh-undo-savepoint」快捷方式，双击直接打开。诊断面板不只看得见问题，也能修：可修项会标「可修复」，点「修复可修项」即就地修好（修前自动落一个手动快照，修完立刻复查）。
 
 | 桌面快捷方式：插件加载后自动创建，双击直接打开局外 WebUI |
 |---|
@@ -211,6 +211,10 @@ powershell -NoProfile -ExecutionPolicy Bypass -File "tools\dsh-undo.ps1" restore
 powershell -NoProfile -ExecutionPolicy Bypass -File "tools\dsh-undo.ps1" remove -Id <id>
 powershell -NoProfile -ExecutionPolicy Bypass -File "tools\dsh-undo.ps1" prune -KeepAuto 20
 
+# 启动预检（DSH 起不来时也能用）；-Fix 修复可修项
+powershell -NoProfile -ExecutionPolicy Bypass -File "tools\dsh-undo.ps1" doctor
+powershell -NoProfile -ExecutionPolicy Bypass -File "tools\dsh-undo.ps1" doctor -Fix
+
 # 安装插件（自动前后存档，失败自动回退）
 powershell -NoProfile -ExecutionPolicy Bypass -File "tools\dsh-plugin.ps1" add <包名>
 ```
@@ -259,7 +263,8 @@ powershell -NoProfile -ExecutionPolicy Bypass -File "tools\dsh-plugin.ps1" add <
 | `GET /api/undo/list` | 快照列表（含 location: manual/auto/legacy） |
 | `GET /api/undo/diff` | `?id=<id>` 指定快照与当前的文件级结构化 diff |
 | `GET /api/undo/tree` | 目录树 diff（按目录聚合，增 / 删 / 改着色） |
-| `GET /api/undo/doctor` | 一键诊断（store 可写性 / blob 完整性 / settings / 规模） |
+| `GET /api/undo/doctor` | 一键诊断（store 可写性 / blob 完整性 / settings / 规模）＋ 启动预检（清单 BOM / bundles / junction / 重复 loader id / 上次启动未完成） |
+| `POST /api/undo/doctor/fix` | 修复启动预检里的可修项（剥清单与 patch 的 BOM、按 id 去重 loader 条目、重建缺失或悬空的插件 junction），改前先落一个手动快照，返回修复清单 + 复查报告 |
 | `GET / POST /api/undo/settings` | 读 / 写保存参数（自动保存、防抖、保留数、目录），POST 即时生效 |
 | `POST /api/undo/undo` | 撤销上一步；可选 body `{syncDeps: true}` 按还原后的 lockfile 重建 `node_modules` |
 | `POST /api/undo/redo` | 恢复；可选 body `{syncDeps: true}` |

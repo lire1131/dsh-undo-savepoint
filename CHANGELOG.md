@@ -2,13 +2,15 @@
 
 dsh-undo-savepoint 的重要变更。日期为本地时间（UTC+8)。English version: [CHANGELOG.en.md](CHANGELOG.en.md)
 
-## [0.4.8] - 2026-09-11
+## [0.4.8] - 2026-09-16
 
 ### 新增
 
 - **局外 WebUI 深色模式（#37 by @xrn1997）**。`tools/webui/index.html` 此前把 `data-theme` 写死为 `auto`，样式表只认 `dark`，脚本里没有任何解析代码，暗色配色实际不可达，系统深色的用户始终看到亮色页面。现在页面头部内联脚本在样式表之前解析偏好并写入 `data-theme=light|dark`，首帧不会闪白；`auto` 跟随系统 `prefers-color-scheme` 并监听系统切换；顶栏新增三态按钮（跟随系统 / 浅色 / 深色）并持久化到 `localStorage`；`meta[theme-color]` 与 `color-scheme` 随主题同步，原生滚动条与表单控件一并跟随。局外 WebUI 独立于 DSH 运行、读不到 DSH 的主题设置，因此跟随系统而不是跟随 DSH 应用。
 - **主题 token 快照与审计（#12 / PR #13 by @chriswild1985）**。`lib/client.js` 用到的 14 个 `--dsw-*` 变量逐一比对主题包（357 个 token）后确认全部存在，快照固化为 `tools/dsw-theme-tokens.txt`，smoke 新增断言，出现主题包里不存在的变量名即失败。PR #13 是同一问题的独立修复，其结论已被 v0.3.9 的主题色变量化覆盖，此处补上缺失的回归守卫。
 - **隔离实例的补丁定位闸门**。`DSH_ROOT` 指向一份 dsh 产品树（同时存在 `package.json` 与 `lib/bin.js`）时，`lib/core.mjs` 与 `tools/apply-dsh-patches.ps1` 进入严格隔离模式，只认该产品树、不再回落全局安装与用户级 node_modules，副本 DSH 因此不可能把补丁打到本体产物树。`DSH_ROOT` 原有的依赖树解析含义不受影响，测试与 CI 里指向 `/tmp/dsh-fake15`、`C:/Users/yzf` 这类目录时不触发严格模式，探测顺序与改动前逐条一致。
+- **启动预检**。profile 清单带 UTF-8 BOM、`dsh.profile.bundles` 里声明的包解析不到、patch 文件里插入重复的 loader id，这三类故障都发生在任何插件挂载之前：进程内的启动自愈够不着，DSH 直接崩在 `dsh-app-boot` 的 `readProfileManifest` 与 bundle 装配检查里，0.1.5-rc.2 又不落日志文件，连崩溃原因都无从归因。三端共用的诊断因此增加启动预检段：清单 BOM / JSON / 结构、bundles 逐项解析、`patchReload` 取值、patch 文件 BOM、`link:` 依赖与 junction 落点、patch 里重复的 loader id、上次启动未完成、崩溃归因缺失。可修项标 `fixable`，全部无问题时报出「检查了多少 profile / bundle / link」的小结。junction 检查只覆盖清单里 `link:` 声明的依赖与插件自身：DSH 包树内部的软链在能正常启动的机器上也悬空，全量上报会把真问题淹没（本机实测 16 条误报）。
+- **预检可修项一键修复**。修复只做有实测依据的定点操作，动手前先落一个手动快照、修完自动复查：剥掉清单与 patch 文件的 BOM、按 id 去重 loader 条目并保留最后一条、重建缺失或悬空的插件 junction。三端同源：对话工具 `undo_doctor` 新增 `fix` 参数（报告里可修项带 `[fixable]` 标记）、离线 CLI 新增 `dsh-undo.ps1 doctor [-Fix]`（`tools/doctor.mjs`，纯 Node，不依赖 DSH 能否启动）、局外 WebUI 诊断面板新增「修复可修项」按钮与 `POST /api/undo/doctor/fix`。
 
 ### 变更
 
@@ -25,6 +27,7 @@ dsh-undo-savepoint 的重要变更。日期为本地时间（UTC+8)。English ve
 - 真实产物锚点验证新增 0.1.5-rc.2 产物，判定与 rc.1 完全一致（missing=2、unmatched=1），补丁应用后语法检查通过。三个产物路径支持用 `DSH_PRODUCT_TREE_RC1`、`DSH_PRODUCT_TREE_RC2`、`DSH_PRODUCT_TREE_012` 环境变量指向本地树，CI 之外也能复现。
 - 声明回归守卫扩展为同时校验 0.1.2-rc.1、0.1.5-rc.1、0.1.5-rc.2 三条已实测版本线。
 - smoke 增至 289 项：B4b 段新增按目标版本判定的失效补丁断言（0.1.5 上 `appendBatch-selfheal` 记为 obsoleted 并跳过、不传版本时保持保守语义、清单 `obsoletedOn` 声明守卫），真实产物锚点循环覆盖 rc.1 与 rc.2 两份产物；T1 段新增 28 项，覆盖局外 WebUI 深色模式（解析器先于样式表、三态循环、跟随系统、`data-theme` 只收 light 与 dark，并用最小 DOM 桩真跑内联脚本验证六种偏好与系统组合）、亮暗配色变量一一对应、`--dsw-*` 主题 token 允许清单审计、产品树判定边界与 PowerShell 侧同款闸门。
+- smoke 增至 314 项：新增启动预检的修复闭环覆盖（可修项清单、清单 BOM / 重复 loader id / 悬空 junction 三类定点修复、修后可修项清零、二次修复幂等、修复后的 junction 指回插件安装目录，以及对话工具 `undo_doctor fix=true` 的完整闭环：干跑标 `[fixable]`、修复后 BOM 被剥掉且清单仍可解析、复查无残留可修项、第二遍修复无事可做）。同时修掉三处测试自身的竞态：启动期的固定 `sleep` 改为轮询（快照列表为空时 `undo_list` 会提前返回，崩溃横幅断言因此落空）、重复的一次 `undo_prune` 调用（断言读到了第二次的结果而不是第一次）、预检夹具在 `apply` 的异步启动态落盘之前就把它删掉。路由契约检查改为支持嵌套路径，局外独有端点增至 3 条（`GET /api/undo/doctor`、`POST /api/undo/doctor/fix`、`GET /api/undo/locale`）。
 
 ## [0.4.7] - 2026-09-10
 

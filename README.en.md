@@ -30,7 +30,7 @@ Dreading DSH crashes? Afraid a tiny edit becomes a disaster? One-click rollback 
 | **One-click SAFE MODE** | When DSH cannot boot at all, temporarily disables every user plugin except the undo system so it always boots; auto-snapshots + config backup on entry, one-click exit (profile/home dual-level patches backed up & restored; bundle entries that would fail the loader's hard checks are neutralized with the original `package.json` backed up separately and fully restored on exit) |
 | **Crash attribution** | After an abnormal exit, classifies the crash by log signature (`session-corrupt` / `bundle-check` / `patch-tree`), names the concrete last-known-good snapshot and offers a one-click rollback — no guessing |
 | **Session-file scan & repair** | `undo_scan` scans `<home>/sessions/**/session.jsonl.zstd`: single-frame layout violations (the 8/18 crash root cause) and synthetic-closer seq overlap (interrupted-turn seq overlap after undo/snapshot restores) are repaired in place (original kept as `.bak` + quarantine copy) with triple verification; undecodable files are only isolated, never touched. Offline via `dsh-undo.ps1 scan [--fix]` (requires Node ≥22.15; degrades to a notice on Node 20) |
-| **One-click diagnostic** | `undo_doctor` checks store writability, blob integrity (missing/orphan), settings health, snapshot scale — structured ok/warn/error report with fix hints |
+| **One-click diagnostic & boot preflight** | Store side: snapshot store writability, blob integrity (missing/orphan), settings health, snapshot scale. Boot side preflights the hard failures that kill DSH before any plugin is mounted: profile manifest BOM/JSON/shape, every declared `dsh.profile.bundles` entry resolvable, `patchReload` value, `link:` junction targets, duplicate loader ids in patch files, unfinished previous boot. Structured ok/warn/error report; repairable checks are marked `[fixable]` and can be repaired in one step (`undo_doctor fix=true` in chat, `dsh-undo.ps1 doctor -Fix` offline, or the "Repair fixable" button in the standalone WebUI diagnostic panel), with a manual snapshot taken before and an automatic re-check after |
 | **Safe cross-machine migration** | Restore preflights missing plugins and warns clearly; snapshots export/import as one-click ZIP, optional AES-256-GCM encryption (see [docs/migration.en.md](docs/migration.en.md)) |
 | **Offline emergency kit** | WebUI + GUI window + CLI + auto-created desktop shortcut: undo / restore / SAFE MODE / crash banner / rollback log — everything works when DSH is down |
 | **Auto slimming** | Orphan-blob GC (`undo_compact`) frees disk; size gates keep the plugin tiny (~0.6 MB) with zero runtime dependencies |
@@ -119,7 +119,7 @@ mklink /J "<your-dsh-install>\node_modules\dsh-undo-savepoint" "D:\dsh\plugins\d
 
 ## Offline tools (work even when DSH won't boot)
 
-**WebUI (recommended)** — run `node tools\undo-server.mjs` (or double-click `tools\launch-undo.bat` / `.command` / `.sh` / `.desktop`); it serves a local `127.0.0.1` page with the timeline / rollback / diff / diagnostics / SAFE MODE. A desktop shortcut is auto-created on plugin load.
+**WebUI (recommended)** — run `node tools\undo-server.mjs` (or double-click `tools\launch-undo.bat` / `.command` / `.sh` / `.desktop`); it serves a local `127.0.0.1` page with the timeline / rollback / diff / diagnostics / SAFE MODE. A desktop shortcut is auto-created on plugin load. The diagnostic panel does not only show problems, it repairs them: repairable checks are badged "fixable" and one click on "Repair fixable" fixes them in place, after taking a manual snapshot and with an immediate re-check.
 
 | Desktop shortcut: auto-created on plugin load, double-click to open the offline WebUI |
 |---|
@@ -148,6 +148,10 @@ powershell -NoProfile -ExecutionPolicy Bypass -File "tools\dsh-undo.ps1" restore
 powershell -NoProfile -ExecutionPolicy Bypass -File "tools\dsh-undo.ps1" restore -Id <id> -Force -SyncDeps
 powershell -NoProfile -ExecutionPolicy Bypass -File "tools\dsh-undo.ps1" remove -Id <id>
 powershell -NoProfile -ExecutionPolicy Bypass -File "tools\dsh-undo.ps1" prune -KeepAuto 20
+
+# Boot preflight (works even when DSH cannot start); -Fix repairs what it can
+powershell -NoProfile -ExecutionPolicy Bypass -File "tools\dsh-undo.ps1" doctor
+powershell -NoProfile -ExecutionPolicy Bypass -File "tools\dsh-undo.ps1" doctor -Fix
 
 # Safe plugin install (auto snapshots before/after; auto-rollback on failure)
 powershell -NoProfile -ExecutionPolicy Bypass -File "tools\dsh-plugin.ps1" add <package>
@@ -201,7 +205,8 @@ When a restore touches `package.json` / `pnpm-lock.yaml`, the default behavior o
 | `GET /api/undo/list` | Snapshot list (with location: manual/auto/legacy) |
 | `GET /api/undo/diff` | `?id=<id>` file-level structured diff of a snapshot vs current |
 | `GET /api/undo/tree` | Directory-tree grouped diff of a snapshot vs current |
-| `GET /api/undo/doctor` | One-click diagnostic (store writability / blob integrity / settings / scale) |
+| `GET /api/undo/doctor` | One-click diagnostic (store writability / blob integrity / settings / scale) plus boot preflight (manifest BOM / bundles / junctions / duplicate loader ids / unfinished previous boot) |
+| `POST /api/undo/doctor/fix` | Repair the fixable boot-preflight findings (strip manifest and patch BOMs, dedupe loader entries by id, recreate missing or dangling plugin junctions); takes a manual snapshot first and returns the repair list plus a re-check report |
 | `GET/POST /api/undo/settings` | Read/write save options; POST applies immediately |
 | `GET /api/undo/messages` | Message-level undo: per-message change list |
 | `POST /api/undo/undo` | Undo the last change; optional body `{syncDeps: true}` rebuilds `node_modules` from the restored lockfile |

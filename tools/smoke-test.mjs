@@ -5,7 +5,7 @@ process.env.DSH_ROOT = process.env.DSH_ROOT ?? 'C:/Users/yzf';
 process.env.DSH_UNDO_LANG = 'en';
 // 测试不碰真实桌面：DSH_UNDO_NO_DESKTOP=1 让 apply() 启动时的桌面快捷方式功能跳过。
 process.env.DSH_UNDO_NO_DESKTOP = '1';
-import { mkdtemp, writeFile, readFile, mkdir, rm as rmRaw, readdir, chmod } from 'node:fs/promises';
+import { mkdtemp, writeFile, readFile, mkdir, rm as rmRaw, readdir, chmod, symlink, rmdir, realpath } from 'node:fs/promises';
 import { join, dirname } from 'node:path';
 import { tmpdir } from 'node:os';
 import { fileURLToPath } from 'node:url';
@@ -70,6 +70,31 @@ const cur = async (f) => readFile(join(profile, f), 'utf8');
 const set = async (f, v) => writeFile(join(profile, f), v);
 // Windows 上 fs.rm 偶发 ENOTEMPTY（杀软/索引器短暂占用目录句柄），清理时重试几次
 const cleanup = async (dir) => rm(dir, { recursive: true, force: true });
+// apply() 的启动流程是异步 IIFE，baseline 快照是它最后一步。断言启动期状态（挂载
+// 自愈、重复挂载去重、崩溃横幅、boot-state）之前必须等它真正落地：固定 sleep 在
+// 慢机器上是拿时序赌运气（2026-09-15 实测 prune 与 self-heal 因此常年假红）。
+const waitBaseline = async (autoDir, ms = 8000) => {
+  const t0 = Date.now();
+  while (Date.now() - t0 < ms) {
+    try {
+      for (const e of await readdir(autoDir)) {
+        if (!/^\d{14}-[0-9a-f]{4}$/.test(e)) continue;
+        try { await readFile(join(autoDir, e, 'manifest.json'), 'utf8'); return true; } catch { /* 目录已建、清单未落 */ }
+      }
+    } catch { /* autoDir 尚未创建 */ }
+    await new Promise((r) => setTimeout(r, 50));
+  }
+  return false;
+};
+// 轮询直到条件成立：启动期会改文件的断言一律用它，别再用固定 sleep。
+const waitUntil = async (fn, ms = 8000) => {
+  const t0 = Date.now();
+  while (Date.now() - t0 < ms) {
+    try { if (await fn()) return true; } catch { /* 条件还不成立 */ }
+    await new Promise((r) => setTimeout(r, 50));
+  }
+  return false;
+};
 
 console.log('== 1. snapshot & list ==');
 let out = await run('undo_snapshot', { reason: 'known-good' });
@@ -407,7 +432,11 @@ const ctx9 = {
   effect: (fn) => { const d = fn(); return d ?? (() => { }); }, logger: { info: () => { }, warn: () => { } },
 };
 apply(ctx9, { manualDir: join(snap9, 'manual'), autoDir: join(snap9, 'auto'), homeDir: home9, profileDir: profile9, watch: false, pluginDirs: [] });
-await new Promise((r) => setTimeout(r, 300));
+// 崩溃横幅由启动流程异步写进 cfg.bootAlert：等 boot-state.json 记上本次 pid 再断言
+await waitUntil(async () => (JSON.parse(await readFile(join(snap9, 'auto', 'boot-state.json'), 'utf8')).pid === process.pid));
+// 横幅还要求 undo_list 非空：快照列表为空时 undo_list 直接返回“暂无快照”，
+// 根本走不到横幅那段（2026-09-15 定位）。等 baseline 落盘再断言。
+await waitBaseline(join(snap9, 'auto'));
 const run9 = async (name, args) => (await tools9.get(name).execute(args, {}));
 let out9 = await run9('undo_list', {});
 check(out9.includes('did not finish starting'), 'crash alert shown after simulated crash');
@@ -582,13 +611,18 @@ await mkdir(home14, { recursive: true }); await mkdir(profile14, { recursive: tr
 await writeFile(join(home14, 'settings.yaml'), 'model: x\n');
 await writeFile(join(profile14, 'cordis.patch.yml'), '# patch\n[]\n');
 const tools14 = new Map();
+const logs14 = [];
 const ctx14 = {
   tools: { register: (t) => { tools14.set(t.name, t); return () => { }; } },
   systemPrompt: { section: () => () => { } }, get: () => undefined,
-  effect: (fn) => { const d = fn(); return d ?? (() => { }); }, logger: { info: () => { }, warn: () => { } },
+  effect: (fn) => { const d = fn(); return d ?? (() => { }); }, logger: { info: (...a) => logs14.push(a.join(' ')), warn: () => { } },
 };
 apply(ctx14, { manualDir: join(snap14, 'manual'), autoDir: join(snap14, 'auto'), homeDir: home14, profileDir: profile14, watch: false, pluginDirs: [], autoEnabled: false });
-await new Promise((r) => setTimeout(r, 300));
+// 启动流程是异步 IIFE：baseline 快照只是它倒数第二步，最后一步 pruneAuto 会把还没
+// 被任何快照引用的 blob 一并清掉（计数落在那次调用里，不进 undo_prune 的返回值）。
+// 因此必须等整段跑完（末尾那条 baseline 日志）再往 profile 里写代码文件，否则
+// 这个 blob 会被启动期抢先回收，断言永远看不到 orphan 计数（2026-09-15 定位）。
+await waitUntil(async () => logs14.some((l) => l.includes('baseline snapshot')));
 const run14 = async (name, args) => (await tools14.get(name).execute(args, {}));
 const blobDir14 = join(snap14, 'blobs');
 // baseline 时 patch 无 ./ 引用 → 无 profile blob（目录不存在或为空都算通过）
@@ -961,7 +995,7 @@ const ctx22c2 = {
   effect: (fn) => { const d = fn(); return d ?? (() => { }); }, logger: { info: () => { }, warn: () => { } },
 };
 apply(ctx22c2, { manualDir: join(snap22c, 'manual'), autoDir: join(snap22c, 'auto'), homeDir: home22c, profileDir: profile22c, watch: false, pluginDirs: [] });
-await new Promise((r) => setTimeout(r, 400));
+await waitUntil(async () => (await readFile(join(profile22c, 'cordis.patch.yml'), 'utf8')).includes('dsh-undo-savepoint'));
 check((await readFile(join(profile22c, 'cordis.patch.yml'), 'utf8')).includes('dsh-undo-savepoint'), 'startup self-heal re-ensured undo mount');
 await cleanup(root22c);
 
@@ -1010,7 +1044,7 @@ const ctx24 = {
   effect: (fn) => { const d = fn(); return d ?? (() => { }); }, logger: { info: () => { }, warn: () => { } },
 };
 apply(ctx24, { manualDir: join(snap24, 'manual'), autoDir: join(snap24, 'auto'), homeDir: home24, profileDir: profile24, watch: false, pluginDirs: [] });
-await new Promise((r) => setTimeout(r, 400));
+await waitUntil(async () => !(await readFile(join(home24, 'cordis.patch.yml'), 'utf8')).includes('dsh-undo-savepoint'));
 check((await readFile(join(profile24, 'cordis.patch.yml'), 'utf8')).includes('dsh-undo-savepoint'), 'dup A: profile patch mount kept');
 check(!(await readFile(join(home24, 'cordis.patch.yml'), 'utf8')).includes('dsh-undo-savepoint'), 'dup A: home patch duplicate removed');
 await cleanup(root24);
@@ -1028,7 +1062,7 @@ const ctx24b = {
   effect: (fn) => { const d = fn(); return d ?? (() => { }); }, logger: { info: () => { }, warn: () => { } },
 };
 apply(ctx24b, { manualDir: join(snap24b, 'manual'), autoDir: join(snap24b, 'auto'), homeDir: home24b, profileDir: profile24b, watch: false, pluginDirs: [] });
-await new Promise((r) => setTimeout(r, 400));
+await waitUntil(async () => !(await readFile(join(profile24b, 'cordis.patch.yml'), 'utf8')).includes('dsh-undo-savepoint'));
 const pkg24b = JSON.parse(await readFile(join(profile24b, 'package.json'), 'utf8'));
 check((pkg24b.dsh?.profile?.bundles ?? []).includes('dsh-undo-savepoint') && (pkg24b.dsh?.profile?.bundles ?? []).includes('dsh-other'), 'dup B: bundle mount kept (others untouched)');
 check(!(await readFile(join(profile24b, 'cordis.patch.yml'), 'utf8')).includes('dsh-undo-savepoint'), 'dup B: patch duplicate removed');
@@ -1138,16 +1172,6 @@ await cleanup(root27);
 
 console.log('== 37. B5: crash attribution v2 — log signature classifies crashReason (v0.3.8) ==');
 // 崩溃横幅依赖 undo_list 非空（baseline 快照落盘）；轮询等待，避免时序抖动
-const waitBaseline = async (autoDir, ms = 4000) => {
-  const t0 = Date.now();
-  while (Date.now() - t0 < ms) {
-    try {
-      const es = await readdir(autoDir);
-      if (es.some((e) => /^\d{14}-[0-9a-f]{4}$/.test(e))) return;
-    } catch { /* autoDir 尚未创建 */ }
-    await new Promise((r) => setTimeout(r, 100));
-  }
-};
 // 场景 A：日志含会话损坏签名 → session-corrupt + undo_list 给出 undo_scan 建议
 const root28 = await mkdtemp(join(tmpdir(), 'dsh-undo-test28-'));
 const home28 = join(root28, 'home'), profile28 = join(root28, 'profile'), snap28 = join(root28, 'snaps');
@@ -1772,6 +1796,116 @@ console.log('== T1. #37 offline WebUI dark mode + theme token audit (v0.4.8) =='
   check((await isDshProductTree(fakeTree)) === true, 'isolation: package.json + lib/bin.js => strict mode on');
   const ps1 = await readFile(join(repoRoot, 'tools', 'apply-dsh-patches.ps1'), 'utf8');
   check(ps1.includes('lib\\bin.js') && ps1.includes('$productTree'), 'isolation: PowerShell side applies the same product-tree gate');
+}
+
+// ── T2. 启动预检体检与定点修复（v0.4.8）──────────────────────────────────
+// 依据：隔离实例破坏式实验证明，profile 清单带 BOM、bundle 缺 dsh.bundle.patch
+// 都会在任何插件挂载之前硬失败，进程内自救够不着。这一段既验检测面，也验修复
+// 真能把文件改回来（BOM 剥掉、重复 id 去掉、悬空 junction 重指）。
+console.log('== T2. boot preflight doctor + targeted repair (v0.4.8) ==');
+{
+  const core = await import('../lib/core.mjs');
+  const rootD = await mkdtemp(join(tmpdir(), 'dsh-undo-doctor-'));
+  const homeD = join(rootD, 'home');
+  const webD = join(homeD, 'profiles', 'web');
+  const autoD = join(homeD, 'undo-snapshots', 'auto');
+  await mkdir(join(homeD, 'profiles', 'node_modules', 'exp-no-bundle'), { recursive: true });
+  await mkdir(webD, { recursive: true });
+  await mkdir(join(homeD, 'node_modules'), { recursive: true });
+  await mkdir(autoD, { recursive: true });
+  const cfgD = core.buildConfig({
+    profileName: 'web', homeDir: homeD, profileDir: webD,
+    manualDir: join(homeD, 'undo-snapshots', 'manual'), autoDir: autoD, pluginDirs: [],
+  });
+
+  // 1) profile 清单带 UTF-8 BOM（实测触发点：readProfileManifest 的 JSON.parse）
+  const manifest = '{ "name": "dsh-profile-web", "dsh": { "profile": { "bundles": ["exp-no-bundle", "exp-missing-bundle"], "patchReload": "live" } } }\n';
+  const manifestPath = join(webD, 'package.json');
+  await writeFile(manifestPath, Buffer.concat([Buffer.from([0xef, 0xbb, 0xbf]), Buffer.from(manifest, 'utf8')]));
+
+  // 2) bundle 声明面：一个能解析但没声明 dsh.bundle.patch，一个根本解析不到
+  await writeFile(join(homeD, 'profiles', 'node_modules', 'exp-no-bundle', 'package.json'), '{ "name": "exp-no-bundle", "version": "1.0.0" }\n');
+
+  // 3) 悬空 junction：插件自身那条（迁移后最典型的症状）
+  const selfLink = join(homeD, 'node_modules', 'dsh-undo-savepoint');
+  const goneTarget = join(rootD, 'gone-target');
+  await mkdir(goneTarget, { recursive: true });
+  await symlink(goneTarget, selfLink, 'junction');
+  await rm(goneTarget, { recursive: true, force: true });
+
+  // 4) 同一个 patch 文件里 insert 了重复 id（实测触发点：duplicate loader entry id）
+  const homePatch = join(homeD, 'cordis.patch.yml');
+  await writeFile(homePatch, ['- insert:', '    - id: exp-dup', '      name: exp-one', '    - id: exp-dup', '      name: exp-two', ''].join('\n'));
+
+  // 5) 上次启动没跑完，且没有可读的崩溃日志源
+  await writeFile(join(autoD, 'boot-state.json'), JSON.stringify({ startedAt: '2026-09-15T14:00:00.000Z', pid: 1, ok: false, okAt: null, lastGoodAt: '2026-09-15T13:00:00.000Z', crashReason: null }));
+
+  const codes = (r) => r.checks.map((c) => c.code);
+  const before = await core.runDoctor(cfgD);
+  const bomCheck = before.checks.find((c) => c.code === 'pre-manifest-bom');
+  check(bomCheck !== undefined && bomCheck.level === 'err', 'T2: manifest BOM detected as an error');
+  check(bomCheck?.fixable === true, 'T2: BOM check is marked fixable');
+  check(before.checks.filter((c) => c.code === 'pre-bundle').length === 2, 'T2: both the local and the unresolvable bundle are reported');
+  check(codes(before).includes('pre-link-dangling'), 'T2: dangling plugin junction detected');
+  check(codes(before).includes('pre-loader-id'), 'T2: duplicated loader entry id detected');
+  check(codes(before).includes('pre-boot-state'), 'T2: unfinished last boot surfaced');
+  check(codes(before).includes('pre-crash-attribution'), 'T2: missing crash-log source surfaced');
+  check(!codes(before).includes('pre-patchreload'), 'T2: a valid patchReload is not flagged');
+  check(before.ok === false && before.fixable >= 3, `T2: report is unhealthy with fixable items (fixable=${before.fixable})`);
+
+  const fixed = await core.runDoctorFix(cfgD);
+  check(fixed.fixed >= 3 && fixed.failed === 0, `T2: fix applied cleanly (fixed=${fixed.fixed} failed=${fixed.failed})`);
+  check(typeof fixed.snapshotId === 'string' && fixed.snapshotId.length > 0, 'T2: a pre-fix snapshot was taken');
+  const afterManifest = await readFile(manifestPath);
+  check(!(afterManifest[0] === 0xef && afterManifest[1] === 0xbb && afterManifest[2] === 0xbf), 'T2: BOM stripped from the profile manifest');
+  check(JSON.parse(afterManifest.toString('utf8')).name === 'dsh-profile-web', 'T2: manifest still parses after the repair');
+  const patchText = await readFile(homePatch, 'utf8');
+  check((patchText.match(/id: exp-dup/g) ?? []).length === 1, 'T2: duplicate loader entry dropped, one left');
+  check(patchText.includes('exp-two') && !patchText.includes('exp-one'), 'T2: the last entry of the duplicated id is the one kept');
+  const afterCodes = codes(fixed.report);
+  check(!afterCodes.includes('pre-manifest-bom') && !afterCodes.includes('pre-link-dangling') && !afterCodes.includes('pre-loader-id'), 'T2: repaired categories are clean on re-check');
+  check(afterCodes.includes('pre-bundle'), 'T2: non-fixable problems stay reported (bundles)');
+  const realSelf = await realpath(selfLink).catch(() => null);
+  const pluginRoot = await realpath(join(dirname(fileURLToPath(import.meta.url)), '..')).catch(() => null);
+  check(realSelf !== null && pluginRoot !== null && realSelf.toLowerCase() === pluginRoot.toLowerCase(), 'T2: dangling plugin junction re-pointed at the installed plugin');
+  const again = await core.runDoctorFix(cfgD);
+  check(again.applied.length === 0, 'T2: a second repair run finds nothing to do (idempotent)');
+  // 先摘掉 junction 本体再删目录，避免清理时跟随链接目标
+  await rmdir(selfLink).catch(() => { });
+  await cleanup(rootD);
+}
+
+console.log('== T3. undo_doctor fix=true: 预检修复的工具面（v0.4.8）==');
+{
+  const rootD3 = await mkdtemp(join(tmpdir(), 'dsh-undo-doctor-tool-'));
+  const homeD3 = join(rootD3, 'home'), profileD3 = join(homeD3, 'profiles', 'web'), snapD3 = join(rootD3, 'snaps');
+  await mkdir(profileD3, { recursive: true });
+  const manifestD3 = '{ "name": "dsh-profile-web", "dsh": { "profile": { "bundles": [] } } }\n';
+  await writeFile(join(profileD3, 'package.json'), Buffer.concat([Buffer.from([0xef, 0xbb, 0xbf]), Buffer.from(manifestD3, 'utf8')]));
+  const toolsD3 = new Map();
+  const ctxD3 = {
+    tools: { register: (x) => { toolsD3.set(x.name, x); return () => { }; } },
+    systemPrompt: { section: () => () => { } }, get: () => undefined,
+    effect: (fn) => { const d = fn(); return d ?? (() => { }); }, logger: { info: () => { }, warn: () => { } },
+  };
+  apply(ctxD3, { manualDir: join(snapD3, 'manual'), autoDir: join(snapD3, 'auto'), homeDir: homeD3, profileDir: profileD3, watch: false, pluginDirs: [] });
+  // apply 的启动自愈会异步写一条 {ok:false} 的启动态（写完才会有「上次启动未完成」提醒）。
+  // 先等它落盘再摘掉：那条提醒与本次修复无关，却会让预检小结（仅在 0 问题时才打印）永不出现。
+  const bootD3 = join(snapD3, 'auto', 'boot-state.json');
+  await waitUntil(async () => (await readFile(bootD3, 'utf8').catch(() => null)) !== null);
+  await rm(bootD3, { force: true });
+  const doc = toolsD3.get('undo_doctor');
+  const dry = await doc.execute({}, {});
+  check(dry.includes('[fixable]'), 'T3: doctor marks the fixable problem without repairing it');
+  const fixedD3 = await doc.execute({ fix: true }, {});
+  const afterD3 = await readFile(join(profileD3, 'package.json'));
+  check(!(afterD3[0] === 0xef && afterD3[1] === 0xbb && afterD3[2] === 0xbf), 'T3: undo_doctor fix=true stripped the manifest BOM');
+  check(JSON.parse(afterD3.toString('utf8')).name === 'dsh-profile-web', 'T3: manifest still parses after the tool repair');
+  check(!fixedD3.includes('[fixable]'), 'T3: the fix run re-checks and reports nothing fixable left');
+  check(fixedD3.includes('link(s) checked'), 'T3: the fixed report shows the preflight summary (what was checked)');
+  const againD3 = await doc.execute({ fix: true }, {});
+  check(!againD3.includes('[fixable]'), 'T3: a second fix run finds nothing left to repair');
+  await cleanup(rootD3);
 }
 
 await rm(root, { recursive: true, force: true });
