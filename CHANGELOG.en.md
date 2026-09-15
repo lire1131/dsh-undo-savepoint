@@ -2,6 +2,30 @@
 
 Notable changes to dsh-undo-savepoint. Dates are in local time (UTC+8). 中文版:[CHANGELOG.md](CHANGELOG.md)
 
+## [0.4.8] - 2026-09-11
+
+### Added
+
+- **Dark mode for the offline WebUI (#37 by @xrn1997)**. `tools/webui/index.html` hard-coded `data-theme` to `auto`, the stylesheet only understood `dark`, and no script ever resolved it, so the dark palette was unreachable and users on a dark system always got the light page. An inline script in the page head now resolves the preference before the stylesheet and writes `data-theme=light|dark`, so the first paint never flashes white; `auto` follows `prefers-color-scheme` and listens for system changes; the topbar gained a three-state button (follow system / light / dark) persisted in `localStorage`; `meta[theme-color]` and `color-scheme` follow the theme, and native scrollbars and form controls come along. The offline WebUI runs outside DSH and cannot read DSH's own theme setting, so it follows the system rather than the DSH app.
+- **Theme-token allowlist and audit (#12 / PR #13 by @chriswild1985)**. The 14 `--dsw-*` variables used by `lib/client.js` were each located in the DSH 0.1.5-rc.2 `@deepseek-ai/dsh-client-ui-theme` package (357 `--dsw-*` tokens in total) and all exist; the set is pinned in `tools/dsw-theme-tokens.txt` and smoke now fails if `client.js` mentions a theme variable outside that list. PR #13 fixed the same problem independently, and its verdict was already covered by the v0.3.9 theme-variable work, so this adds the regression guard that had been missing.
+- **Patch-location gate for isolated instances**. When `DSH_ROOT` points at a dsh product tree (both `package.json` and `lib/bin.js` present), `lib/core.mjs` and `tools/apply-dsh-patches.ps1` enter strict isolation mode and accept only that tree, no longer falling back to the global install or the user-level `node_modules`, so a copied DSH cannot patch the main product tree. The pre-existing meaning of `DSH_ROOT` (the dsh dependency-tree resolution root, pointed at `/tmp/dsh-fake15` or `C:/Users/yzf` in tests and CI) is unaffected, because such directories are not product trees and keep the original probe order line for line.
+
+### Changed
+
+- **engines.dsh covers 0.1.5-rc.2**. On the surfaces this plugin touches, 0.1.5-rc.2 carries no code difference from rc.1, so this declaration lifts the install gate for rc.2 users. Comparing the product size of 183 comparable official packages, only 5 changed content: the Web frontend bundle `dsh-web-frontend`, the interface packages `dsh-client-ui-message-feedback` and `dsh-client-ui-deliverables`, and the copy-only packages `dsh-message-feedback` and `dsh-command-feedback`. None of them touch an interface the plugin uses. The tolerance patch target `dsh-session-persistence-jsonl` and 14 core packages (tools, session format, session persistence, host webserver, client modules and locale, bundle base, permission presets, session, LLM) are byte-identical to rc.1.
+- The 0.1.5 variants in the tolerance patch manifest now document coverage of both rc.1 and rc.2, see `tools/dsh-patches.json`.
+
+### Fixed
+
+- **Patch application no longer aborts the whole batch on an obsolete patch**. The read race `appendBatch-selfheal` targets was resolved by the official 0.1.5 rewrite, so the target file carries neither the old nor the new anchor. `apply` used to treat that state as an error and abort everything, leaving the two still-valid patches unwritten. The manifest can now declare `obsoletedOn` to mark a patch obsolete on given version lines: `status` and `verify` report such a patch as obsoleted and count it as passing, while `apply` and `remove` skip it and continue with the remaining patches. On 0.1.5-rc.2 the outcome is 2 applied, 1 skipped as obsolete, and the patched file passes syntax checking.
+- **`tools/apply-dsh-patches.ps1` no longer garbles its Chinese text**. The script had been saved as UTF-8 without a BOM, which Windows PowerShell 5.1 decodes as GBK, garbling its Chinese comments and messages and raising parse errors. It is now saved as UTF-8 with a BOM.
+
+### Tests
+
+- Real-product anchor verification gained the 0.1.5-rc.2 product, whose verdict matches rc.1 exactly (missing=2, unmatched=1), and the patched file passes syntax checking. The three product paths can be pointed at a local tree through `DSH_PRODUCT_TREE_RC1`, `DSH_PRODUCT_TREE_RC2` and `DSH_PRODUCT_TREE_012`, so the check is reproducible outside CI.
+- The declaration regression guard now verifies all three measured version lines, 0.1.2-rc.1, 0.1.5-rc.1 and 0.1.5-rc.2.
+- smoke grew to 289 checks: B4b adds target-version-aware obsolete assertions (on 0.1.5 `appendBatch-selfheal` is reported obsoleted and skipped, the no-version path keeps the conservative semantics, and the manifest `obsoletedOn` declaration is guarded), and the real-product anchor loop covers both the rc.1 and rc.2 products. T1 adds 28 checks covering the offline WebUI dark mode (resolver before the stylesheet, three-state cycle, system following, `data-theme` limited to light and dark, plus a minimal-DOM harness that really executes the inline resolver across six preference/system combinations), light/dark palette parity, the `--dsw-*` theme-token allowlist audit, the product-tree boundary and the matching PowerShell gate.
+
 ## [0.4.7] - 2026-09-10
 
 ### Added

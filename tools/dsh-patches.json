@@ -1,6 +1,6 @@
 {
   "version": 2,
-  "note": "dsh-session-persistence-jsonl 容错补丁清单（v0.3.8 B4，v0.4.5 起支持多版本子串）。补丁可带 variants（同一逻辑在不同 DSH 版本的代码形态），任一形态命中即匹配。old = 原始代码片段，new = 已验证补丁片段。apply/verify 通过精确子串匹配替换。",
+  "note": "dsh-session-persistence-jsonl 容错补丁清单（v0.3.8 B4，v0.4.5 起支持多版本子串）。补丁可带 variants（同一逻辑在不同 DSH 版本的代码形态），任一形态命中即匹配。old = 原始代码片段，new = 已验证补丁片段。apply/verify 通过精确子串匹配替换。0.1.5-rc.1 与 0.1.5-rc.2 的目标文件逐字节相同，同一 0.1.5 变体同时覆盖两个版本（v0.4.8 实测）。",
   "target": "@deepseek-ai/dsh-session-persistence-jsonl/lib/index.js",
   "patches": [
     {
@@ -19,7 +19,9 @@
           "old": "\t/** Durably append a batch, lazily materializing the file when not yet present. */\n\tasync appendBatch(storage, events, isMaterialized) {\n\t\tawait this.ensureRootEncoding();\n\t\tif (isMaterialized) await this.appendLines(storage.meta, events);\n\t\telse await this.materialize(storage, events);\n\t}",
           "new": "\t/** Durably append a batch, lazily materializing the file when not yet present. */\n\tasync appendBatch(storage, events, isMaterialized) {\n\t\tawait this.ensureRootEncoding();\n\t\tif (isMaterialized) {\n\t\t\ttry {\n\t\t\t\tawait this.appendLines(storage.meta, events);\n\t\t\t} catch (error) {\n\t\t\t\tif (isENOENT(error)) await this.materialize(storage, events);\n\t\t\t\telse throw error;\n\t\t\t}\n\t\t} else await this.materialize(storage, events);\n\t}"
         }
-      ]
+      ],
+      "obsoletedOn": ["0.1.5"],
+      "obsoletedNote": "DSH 0.1.5 起官方 appendBatch 已重写，原竞态被消解，产物中不再存在 old/new 锚点，无锚点属预期（0.1.5-rc.1 与 0.1.5-rc.2 实测）。"
     },
     {
       "id": "listArtifacts-isolate",
@@ -31,7 +33,7 @@
           "new": "\t\t\t\tlet first;\n\t\t\t\ttry {\n\t\t\t\t\tfirst = this.compression === \"zstd\" ? await this.readFirstZstdLine(path, signal) : await this.readFirstLine(path, signal);\n\t\t\t\t} catch (error) {\n\t\t\t\t\tsignal?.throwIfAborted();\n\t\t\t\t\tif (isENOENT(error)) continue;\n\t\t\t\t\t// A corrupt artifact must never take down the whole session\n\t\t\t\t\t// listing (and therefore DSH boot): quarantine it with a\n\t\t\t\t\t// warning and keep every other session visible.\n\t\t\t\t\tif (typeof error?.message === \"string\" && error.message.startsWith(\"corrupt Zstandard session log:\")) {\n\t\t\t\t\t\tconsole.warn(`[session-persistence-jsonl] skipping unreadable session artifact: ${path} (${error.message})`);\n\t\t\t\t\t\tcontinue;\n\t\t\t\t\t}\n\t\t\t\t\tthrow error;\n\t\t\t\t}"
         },
         {
-          "note": "DSH 0.1.5-rc.1 形态：listArtifacts 改走 readGenerationHeader 包装，corrupt 错误在其 catch 中隔离。",
+          "note": "DSH 0.1.5 形态（rc.1 与 rc.2 产物相同）：listArtifacts 改走 readGenerationHeader 包装，corrupt 错误在其 catch 中隔离。",
           "old": "\t\t\t\ttry {\n\t\t\t\t\theader = await this.readGenerationHeader(selected, void 0, signal);\n\t\t\t\t} catch (error) {\n\t\t\t\t\tif (error instanceof SessionFormatUnsupportedError) continue;\n\t\t\t\t\tthrow error;\n\t\t\t\t}",
           "new": "\t\t\t\ttry {\n\t\t\t\t\theader = await this.readGenerationHeader(selected, void 0, signal);\n\t\t\t\t} catch (error) {\n\t\t\t\t\tsignal?.throwIfAborted();\n\t\t\t\t\tif (error instanceof SessionFormatUnsupportedError) continue;\n\t\t\t\t\t// A corrupt artifact must never take down the whole session\n\t\t\t\t\t// listing (and therefore DSH boot): quarantine it with a\n\t\t\t\t\t// warning and keep every other session visible.\n\t\t\t\t\tif (typeof error?.message === \"string\" && error.message.startsWith(\"corrupt Zstandard session log:\")) {\n\t\t\t\t\t\tconsole.warn(`[session-persistence-jsonl] skipping unreadable session artifact: ${selected.sourcePath} (${error.message})`);\n\t\t\t\t\t\tcontinue;\n\t\t\t\t\t}\n\t\t\t\t\tthrow error;\n\t\t\t\t}"
         }
@@ -42,7 +44,7 @@
       "description": "readFirstZstdLine 容错：头帧非纯 header 行时按首行校验兜底，坏日志跳过不拖垮列表（0.1.2 与 0.1.5 产物锚点同形态）",
       "variants": [
         {
-          "note": "优先形态（0.1.2-rc.1 与 0.1.5-rc.1 通用）：new 用内联 JSON 校验，不依赖 parseHeaderMeta（0.1.5 产物无此函数）。apply 按顺序选中此变体。",
+          "note": "优先形态（0.1.2-rc.1 与 0.1.5 全线通用，0.1.5-rc.1 与 rc.2 产物相同）：new 用内联 JSON 校验，不依赖 parseHeaderMeta（0.1.5 产物无此函数）。apply 按顺序选中此变体。",
           "old": "\t\t\t\tsignal?.throwIfAborted();\n\t\t\t\tassertZstdHeaderFrame(plaintext);\n\t\t\t\treturn plaintext.subarray(0, -1).toString(\"utf8\");",
           "new": "\t\t\t\tsignal?.throwIfAborted();\n\t\t\t\ttry {\n\t\t\t\t\tassertZstdHeaderFrame(plaintext);\n\t\t\t\t\treturn plaintext.subarray(0, -1).toString(\"utf8\");\n\t\t\t\t} catch (error) {\n\t\t\t\t\t// Tolerate logs whose first frame carries more than the header\n\t\t\t\t\t// line (e.g. whole-log single-frame artifacts written by legacy\n\t\t\t\t\t// repair tooling): the header is still the first line of the\n\t\t\t\t\t// concatenated plaintext stream. Accept it only when that first\n\t\t\t\t\t// line is a well-formed session header; anything else is treated\n\t\t\t\t\t// as unreadable and skipped by the caller instead of failing\n\t\t\t\t\t// the entire listing.\n\t\t\t\t\tconst nl = plaintext.indexOf(10);\n\t\t\t\t\tif (nl <= 0) return void 0;\n\t\t\t\t\tlet meta;\n\t\t\t\t\ttry {\n\t\t\t\t\t\tmeta = JSON.parse(plaintext.subarray(0, nl).toString(\"utf8\"));\n\t\t\t\t\t} catch {\n\t\t\t\t\t\treturn void 0;\n\t\t\t\t\t}\n\t\t\t\t\tif (meta === null || typeof meta !== \"object\" || meta.type !== \"session\" || typeof meta.version !== \"number\") return void 0;\n\t\t\t\t\treturn plaintext.subarray(0, nl).toString(\"utf8\");\n\t\t\t\t}"
         },

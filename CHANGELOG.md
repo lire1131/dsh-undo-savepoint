@@ -2,6 +2,30 @@
 
 dsh-undo-savepoint 的重要变更。日期为本地时间（UTC+8)。English version: [CHANGELOG.en.md](CHANGELOG.en.md)
 
+## [0.4.8] - 2026-09-11
+
+### 新增
+
+- **局外 WebUI 深色模式（#37 by @xrn1997）**。`tools/webui/index.html` 此前把 `data-theme` 写死为 `auto`，样式表只认 `dark`，脚本里没有任何解析代码，暗色配色实际不可达，系统深色的用户始终看到亮色页面。现在页面头部内联脚本在样式表之前解析偏好并写入 `data-theme=light|dark`，首帧不会闪白；`auto` 跟随系统 `prefers-color-scheme` 并监听系统切换；顶栏新增三态按钮（跟随系统 / 浅色 / 深色）并持久化到 `localStorage`；`meta[theme-color]` 与 `color-scheme` 随主题同步，原生滚动条与表单控件一并跟随。局外 WebUI 独立于 DSH 运行、读不到 DSH 的主题设置，因此跟随系统而不是跟随 DSH 应用。
+- **主题 token 快照与审计（#12 / PR #13 by @chriswild1985）**。`lib/client.js` 用到的 14 个 `--dsw-*` 变量逐一比对主题包（357 个 token）后确认全部存在，快照固化为 `tools/dsw-theme-tokens.txt`，smoke 新增断言，出现主题包里不存在的变量名即失败。PR #13 是同一问题的独立修复，其结论已被 v0.3.9 的主题色变量化覆盖，此处补上缺失的回归守卫。
+- **隔离实例的补丁定位闸门**。`DSH_ROOT` 指向一份 dsh 产品树（同时存在 `package.json` 与 `lib/bin.js`）时，`lib/core.mjs` 与 `tools/apply-dsh-patches.ps1` 进入严格隔离模式，只认该产品树、不再回落全局安装与用户级 node_modules，副本 DSH 因此不可能把补丁打到本体产物树。`DSH_ROOT` 原有的依赖树解析含义不受影响，测试与 CI 里指向 `/tmp/dsh-fake15`、`C:/Users/yzf` 这类目录时不触发严格模式，探测顺序与改动前逐条一致。
+
+### 变更
+
+- **engines.dsh 覆盖 0.1.5-rc.2**。0.1.5-rc.2 在插件接触面上与 rc.1 无代码差异，本声明解除 rc.2 用户的安装拦截。逐包比对 183 个可比官方包的产物体积，仅 5 个包内容有变化，分别是 Web 前端产物 `dsh-web-frontend`、界面包 `dsh-client-ui-message-feedback` 与 `dsh-client-ui-deliverables`、文案包 `dsh-message-feedback` 与 `dsh-command-feedback`，均不涉及插件使用的接口。容错补丁目标 `dsh-session-persistence-jsonl` 以及工具、会话格式、会话持久化、宿主 Web 服务、客户端模块与语言包、bundle 基座、权限预设、会话、LLM 等 14 个核心包的实现产物与 rc.1 逐字节相同。
+- 容错补丁清单的 0.1.5 变体说明更新为覆盖 rc.1 与 rc.2 两个版本，`tools/dsh-patches.json`。
+
+### 修复
+
+- **补丁应用遇到已失效补丁时不再整批中止**。`appendBatch-selfheal` 针对的读取竞态在 DSH 0.1.5 已被官方重构消解，目标文件里既没有旧锚点也没有新锚点。apply 此前把这种状态判定为异常并整批中止，连另外两个仍然有效的补丁也没有写入。现在清单可用 `obsoletedOn` 声明某补丁在哪些版本线上已失效：`status` 与 `verify` 把它记为 obsoleted 并视为通过，`apply` 与 `remove` 跳过它、继续处理其余补丁。0.1.5-rc.2 上的实际结果为 2 个应用、1 个失效跳过，目标文件语法检查通过。
+- **`tools/apply-dsh-patches.ps1` 修复中文乱码**。脚本此前保存为不带 BOM 的 UTF-8，Windows PowerShell 5.1 按 GBK 解码后中文注释与提示乱码并触发解析错误，现在统一以带 BOM 的 UTF-8 保存。
+
+### 测试
+
+- 真实产物锚点验证新增 0.1.5-rc.2 产物，判定与 rc.1 完全一致（missing=2、unmatched=1），补丁应用后语法检查通过。三个产物路径支持用 `DSH_PRODUCT_TREE_RC1`、`DSH_PRODUCT_TREE_RC2`、`DSH_PRODUCT_TREE_012` 环境变量指向本地树，CI 之外也能复现。
+- 声明回归守卫扩展为同时校验 0.1.2-rc.1、0.1.5-rc.1、0.1.5-rc.2 三条已实测版本线。
+- smoke 增至 289 项：B4b 段新增按目标版本判定的失效补丁断言（0.1.5 上 `appendBatch-selfheal` 记为 obsoleted 并跳过、不传版本时保持保守语义、清单 `obsoletedOn` 声明守卫），真实产物锚点循环覆盖 rc.1 与 rc.2 两份产物；T1 段新增 28 项，覆盖局外 WebUI 深色模式（解析器先于样式表、三态循环、跟随系统、`data-theme` 只收 light 与 dark，并用最小 DOM 桩真跑内联脚本验证六种偏好与系统组合）、亮暗配色变量一一对应、`--dsw-*` 主题 token 允许清单审计、产品树判定边界与 PowerShell 侧同款闸门。
+
 ## [0.4.7] - 2026-09-10
 
 ### 新增
