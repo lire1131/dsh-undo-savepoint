@@ -19,6 +19,7 @@
       safemodeOffClick: '退出安全模式，恢复之前的插件与 bundle？',
       crashBanner: '上次 DSH 启动未完成（可能崩溃）。',
       lastGood: '最后已知良好快照', restoreGood: '恢复', lang: '语言', refresh: '刷新',
+      theme: '主题', themeAuto: '跟随系统', themeLight: '浅色', themeDark: '深色',
       manual: '手动', auto: '自动', pre: '撤销前', baseline: '基线', legacy: '旧版',
       stepAuto: '自动', preState: '撤销点', files: '个文件', profileFiles: '个配置文件',
       pluginFiles: '个插件文件', redacted: '脱敏', needsRestart: '需重启', truncated: '截断',
@@ -42,6 +43,7 @@
       safemodeOffClick: 'Exit safe mode and restore the previous plugins/bundles?',
       crashBanner: 'Previous DSH run did not finish starting (likely crashed).',
       lastGood: 'Last known-good snapshot', restoreGood: 'Restore', lang: 'language', refresh: 'refresh',
+      theme: 'theme', themeAuto: 'follow system', themeLight: 'light', themeDark: 'dark',
       manual: 'manual', auto: 'auto', pre: 'undo point', baseline: 'baseline', legacy: 'legacy',
       stepAuto: 'auto', preState: 'undo point', files: 'files', profileFiles: 'config files',
       pluginFiles: 'plugin files', redacted: 'redacted', needsRestart: 'restart needed', truncated: 'truncated',
@@ -78,6 +80,7 @@
     $('#btn-import').textContent = `⬆ ${t('import')}`;
     $('#btn-settings').textContent = `⚙ ${t('settings')}`;
     $('#btn-message').textContent = `💬 ${t('msgBtn')}`;
+    renderThemeBtn();
   }
 
   // ── API ─────────────────────────────────────────────────────────────────
@@ -394,6 +397,7 @@
   $('#btn-message').addEventListener('click', openMessages);
   $('#btn-refresh').addEventListener('click', refresh);
   $('#btn-lang').addEventListener('click', () => setLang(LANG === 'zh' ? 'en' : 'zh'));
+  $('#btn-theme').addEventListener('click', cycleTheme);
 
   // ── 对话级撤回 ─────────────────────────────────────────────────────
   async function openMessages() {
@@ -473,7 +477,53 @@
   }
 
   // ── 启动 ───────────────────────────────────────────────────────────────
+  // ── 主题（v0.4.8 / #37）────────────────────────────────────────────────────
+  // 偏好三态（auto / light / dark）存 localStorage，解析结果写 data-theme=light|dark。
+  // 与 index.html 头部内联脚本共用同一个 key 与同一套判定，样式表只认 light|dark。
+  const THEME_KEY = 'dsh-undo-theme';
+  const THEME_STATES = ['auto', 'light', 'dark'];
+  const mqDark = window.matchMedia ? window.matchMedia('(prefers-color-scheme: dark)') : null;
+  let themePref = 'auto';
+
+  function readThemePref() {
+    try { const v = localStorage.getItem(THEME_KEY); return THEME_STATES.includes(v) ? v : 'auto'; } catch (e) { return 'auto'; }
+  }
+  function resolveTheme(pref) {
+    if (pref === 'dark') return 'dark';
+    if (pref === 'light') return 'light';
+    return mqDark && mqDark.matches ? 'dark' : 'light';
+  }
+  function applyTheme(pref, persist) {
+    themePref = THEME_STATES.includes(pref) ? pref : 'auto';
+    const resolved = resolveTheme(themePref);
+    const rootEl = document.documentElement;
+    rootEl.setAttribute('data-theme', resolved);
+    rootEl.setAttribute('data-theme-pref', themePref);
+    const meta = document.querySelector('meta[name="theme-color"]');
+    if (meta) meta.setAttribute('content', resolved === 'dark' ? '#141518' : '#2f8f83');
+    if (persist) { try { localStorage.setItem(THEME_KEY, themePref); } catch (e) { /* 隐私模式不可写，忽略 */ } }
+    renderThemeBtn();
+  }
+  function renderThemeBtn() {
+    const btn = $('#btn-theme');
+    if (!btn) return;
+    const icon = { auto: '🌗', light: '☀️', dark: '🌙' }[themePref] ?? '🌗';
+    const name = { auto: t('themeAuto'), light: t('themeLight'), dark: t('themeDark') }[themePref] ?? '';
+    btn.textContent = icon;
+    btn.title = `${t('theme')}: ${name}`;
+    btn.setAttribute('aria-label', btn.title);
+  }
+  function cycleTheme() {
+    applyTheme(THEME_STATES[(THEME_STATES.indexOf(themePref) + 1) % THEME_STATES.length], true);
+  }
+  if (mqDark) {
+    const onSystemTheme = () => { if (themePref === 'auto') applyTheme('auto', false); };
+    if (mqDark.addEventListener) mqDark.addEventListener('change', onSystemTheme);
+    else if (mqDark.addListener) mqDark.addListener(onSystemTheme);
+  }
+
   (async () => {
+    applyTheme(readThemePref(), false);
     try {
       const loc = await get('/api/undo/locale');
       if (loc.lang && loc.lang !== 'auto') setLang(loc.lang);

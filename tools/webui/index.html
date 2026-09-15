@@ -1,10 +1,24 @@
 <!doctype html>
-<html lang="zh" data-theme="auto">
+<html lang="zh" data-theme="light" data-theme-pref="auto">
 <head>
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1" />
   <title>dsh-undo-savepoint · 局外 WebUI</title>
   <meta name="theme-color" content="#2f8f83" />
+  <!-- 主题解析必须早于样式表，否则首帧按亮色绘制再翻黑，会闪一下白。
+       偏好三态存 localStorage，auto 跟随系统 prefers-color-scheme；最终落到
+       data-theme 的只有 light 与 dark 两个值，样式表只认这两个值。 -->
+  <script>
+    (function () {
+      var KEY = 'dsh-undo-theme';
+      var pref = 'auto';
+      try { pref = localStorage.getItem(KEY) || 'auto'; } catch (e) { /* 隐私模式读不到，按 auto 处理 */ }
+      if (pref !== 'light' && pref !== 'dark' && pref !== 'auto') pref = 'auto';
+      var dark = pref === 'dark' || (pref === 'auto' && window.matchMedia && window.matchMedia('(prefers-color-scheme: dark)').matches);
+      document.documentElement.setAttribute('data-theme-pref', pref);
+      document.documentElement.setAttribute('data-theme', dark ? 'dark' : 'light');
+    })();
+  </script>
   <link rel="icon" type="image/svg+xml" href="./logo.svg" />
   <link rel="stylesheet" href="./styles.css" />
 </head>
@@ -28,6 +42,7 @@
       </div>
       <div class="topbar-actions">
         <button class="btn btn-ghost" id="btn-lang" title="语言">🌐</button>
+        <button class="btn btn-ghost" id="btn-theme" title="主题">🌗</button>
         <button class="btn btn-ghost" id="btn-refresh" title="刷新">⟳</button>
         <button class="btn btn-primary" id="btn-snapshot">＋ 快照</button>
       </div>

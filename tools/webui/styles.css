@@ -1,6 +1,10 @@
 /* dsh-undo-savepoint 局外 WebUI（V0.4.0，D4/D5：手写、零依赖、亮暗主题、克制动画） */
 
+/* 主题契约（v0.4.8 / #37）：data-theme 只允许 light 与 dark，由 index.html 头部内联
+   脚本在样式表之前解析后写入，原始偏好另存 data-theme-pref。prefers-color-scheme 的
+   匹配在 JS 侧完成，样式表不重复声明第二套暗色变量，避免两处配色各自漂移。 */
 :root {
+  color-scheme: light;
   --bg: #f5f6f8;
   --bg-layer-1: #ffffff;
   --bg-layer-2: #f0f1f4;
@@ -20,6 +24,7 @@
   --safe: 0.28s cubic-bezier(0.22, 0.61, 0.36, 1);
 }
 [data-theme="dark"] {
+  color-scheme: dark;
   --bg: #141518;
   --bg-layer-1: #1e2026;
   --bg-layer-2: #26292f;
