@@ -29,6 +29,10 @@ jobs:
         run: npm install --no-save @deepseek-ai/dsh-tools
       - name: Smoke tests
         run: node tools/smoke-test.mjs
+      - name: Route contract parity (issue #18 regression)
+        run: node tools/check-routes.mjs
+      - name: Standalone undo-server smoke (issues #18 #19, PR #21)
+        run: node tools/undo-server-smoke.mjs
       - name: Home resolution regression (issue #6)
         run: node tools/home-resolution-test.mjs
       - name: Watcher e2e regression
