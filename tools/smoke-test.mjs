@@ -522,7 +522,7 @@ console.log('== 20. sensitive redaction + vault: snapshot redacted, local full r
 const root12 = await mkdtemp(join(tmpdir(), 'dsh-undo-test12-'));
 const home12 = join(root12, 'home'), profile12 = join(root12, 'profile'), snap12 = join(root12, 'snaps');
 await mkdir(home12, { recursive: true }); await mkdir(profile12, { recursive: true });
-await writeFile(join(home12, 'settings.yaml'), 'model: x\n');
+await writeFile(join(home12, 'settings.yaml'), 'model: x\napiKey: sk-live-token12\n');
 await writeFile(join(profile12, 'cordis.patch.yml'), '# patch\n[]\n');
 const originalEnv12 = '# vision api\nAPI_KEY=kfc-vw50\nexport TOKEN="sk-abc123"\nEMPTY=\n';
 await writeFile(join(home12, '.env'), originalEnv12);
@@ -548,18 +548,22 @@ check(snapEnv12.includes('# vision api'), 'comment line preserved');
 check(snapEnv12.includes('EMPTY='), 'empty value line preserved');
 const snapCred12 = await readFile(join(snap12, 'manual', m12dir, 'home-.credentials.yaml'), 'utf8');
 check(snapCred12.includes('apiKey: ***REDACTED***') && snapCred12.includes('secret: ***REDACTED***'), 'credentials.yaml values redacted, keys kept');
+const snapSet12 = await readFile(join(snap12, 'manual', m12dir, 'home-settings.yaml'), 'utf8');
+check(snapSet12.includes('model: ***REDACTED***') && snapSet12.includes('apiKey: ***REDACTED***'), 'home settings.yaml values redacted in snapshot (keys kept)');
+check(!snapSet12.includes('sk-live-token12'), 'no real token in snapshot settings.yaml');
 check(!snapEnv12.includes('kfc-vw50'), 'no real value in snapshot .env');
-check(m12.redacted.includes('home-.env') && m12.redacted.includes('home-.credentials.yaml'), 'manifest redacted list recorded');
-check(m12.envVaultRefs['home-.env'] && m12.envVaultRefs['home-.credentials.yaml'], 'manifest envVaultRefs recorded');
-check((await readdir(vaultDir12)).length === 2, 'vault holds real values (2 files)');
+check(m12.redacted.includes('home-.env') && m12.redacted.includes('home-.credentials.yaml') && m12.redacted.includes('home-settings.yaml'), 'manifest redacted list recorded');
+check(m12.envVaultRefs['home-.env'] && m12.envVaultRefs['home-.credentials.yaml'] && m12.envVaultRefs['home-settings.yaml'], 'manifest envVaultRefs recorded');
+check((await readdir(vaultDir12)).length === 3, 'vault holds real values (3 files)');
 check((await readFile(join(vaultDir12, m12.envVaultRefs['home-.env'] + '.env'), 'utf8')).includes('kfc-vw50'), 'vault file contains the real .env');
 // 2) 本机完整回滚：改 .env → undo → 真实值还原
 await writeFile(join(home12, '.env'), '# vision api\nAPI_KEY=changed-value\nexport TOKEN="other"\nEMPTY=\n');
+await writeFile(join(home12, 'settings.yaml'), 'model: y\napiKey: sk-rotated-token12\n');
 await run12('undo_snapshot', { reason: 's2' });
 // diff 一致性（v0.3.2）：场景A 只改值 → 两侧脱敏后无差异，真实值完全不可见
 const s1Dir12 = (await readdir(join(snap12, 'manual'))).find((d) => d !== '.booting');
 out = await run12('undo_diff', { snapshot_id: s1Dir12 });
-check(!out.includes('kfc-vw50') && !out.includes('changed-value'), 'diff never leaks real values on either side (snapshot or current)');
+check(!out.includes('kfc-vw50') && !out.includes('changed-value') && !out.includes('sk-live-token12'), 'diff never leaks real values on either side (snapshot or current)');
 // 场景B 改键名（结构差异）→ 有差异 + 脱敏标注 + 值仍不泄露
 await writeFile(join(home12, '.env'), '# vision api\nAPI_KEY2=new-key-name\nexport TOKEN="other"\nEMPTY=\n');
 out = await run12('undo_diff', { snapshot_id: s1Dir12 });
@@ -569,6 +573,7 @@ check(!out.includes('kfc-vw50'), 'diff still hides real values when structure di
 await writeFile(join(home12, '.env'), '# vision api\nAPI_KEY=changed-value\nexport TOKEN="other"\nEMPTY=\n');
 out = await run12('undo_restore', { mode: 'undo' });
 check((await readFile(join(home12, '.env'), 'utf8')) === originalEnv12, 'local rollback restores real .env values (vault)');
+check((await readFile(join(home12, 'settings.yaml'), 'utf8')).includes('sk-live-token12'), 'local rollback restores real settings.yaml values (vault)');
 // 3) 换机模拟：删 vault → 恢复 → 占位 + 提示
 await writeFile(join(home12, '.env'), '# vision api\nAPI_KEY=changed-again\nexport TOKEN="other"\nEMPTY=\n');
 await run12('undo_snapshot', { reason: 's3' });
