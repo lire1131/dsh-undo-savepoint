@@ -2,6 +2,39 @@
 
 Notable changes to dsh-undo-savepoint. Dates are in local time (UTC+8). 中文版:[CHANGELOG.md](CHANGELOG.md)
 
+## [0.4.9] - 2026-09-16
+
+### Security
+
+- The home-level settings.yaml now joins the redaction list. Snapshots used to store it verbatim,
+  so any token inside spread through snapshots and export bundles. It now gets the same treatment as
+  .env and .credentials.yaml: snapshots hold placeholders, real values live only in the local vault,
+  local restores pull the real values back, cross-machine imports yield placeholders with an explicit
+  note. Whole-value redaction follows the existing model (keys kept, values replaced, diffs show
+  structure only). Existing snapshots are not rewritten retroactively; pruning old snapshots and
+  re-baselining is recommended.
+
+### Fixed
+
+- DSH_HOME resolution now matches the host. An empty or whitespace-only DSH_HOME falls back to
+  ~/.dsh (the plugin previously produced a relative path), and tilde prefixes (~, ~/, ~\) are
+  expanded. The home-resolution regression gains an empty-string branch.
+
+### Changed
+
+- CI runs two more gates: route-contract parity and the standalone server smoke, previously
+  local-only.
+- Release hygiene: the stray empty tools/gui-test-out.txt is removed from the package (46 files
+  down to 45) and .gitignore now guards against committing .npmrc.
+- Dev fallback paths are de-personalized: the hardcoded machine path becomes the user home directory.
+- `tools/apply-dsh-patches.ps1` carries its UTF-8 BOM again. The script contains Chinese comments, and Windows PowerShell 5.1 parses a BOM-less file as GBK, which corrupts quotes and raises a parse error; the repository had been shipping the file without the BOM, so the encoding-audit case 25 failed. This release restores the BOM byte for byte.
+
+### Tests
+
+- Smoke grows to 317 checks covering settings.yaml redaction, manifest and vault bookkeeping,
+  local restore of real values, and leak-free diffs.
+- Home resolution regression covers three branches (explicit / unset / empty DSH_HOME).
+
 ## [0.4.8] - 2026-09-16
 
 ### Added

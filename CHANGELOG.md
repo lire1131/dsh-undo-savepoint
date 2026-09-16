@@ -2,6 +2,35 @@
 
 dsh-undo-savepoint 的重要变更。日期为本地时间（UTC+8)。English version: [CHANGELOG.en.md](CHANGELOG.en.md)
 
+## [0.4.9] - 2026-09-16
+
+### 安全
+
+- **home 级 settings.yaml 纳入脱敏清单**。此前快照把 DSH 家目录的 settings.yaml 原文存盘，
+  文件里一旦出现令牌就会随快照与导出包明文扩散。现在与 .env、.credentials.yaml 同等待遇：
+  快照内存占位值，真实值只写进本机 vault，本机恢复从 vault 取回真值，跨机导入得到占位并明确提示。
+  全值脱敏沿用既有模式（键名保留、值变占位，diff 只显示结构差异）。旧快照中的明文不追溯清除，
+  建议清理旧快照后重建基线。
+
+### 修复
+
+- **DSH_HOME 解析对齐宿主**。DSH_HOME 为空串或纯空白时，宿主按未设置回落 ~/.dsh，
+  插件此前会拼出相对路径；波浪号前缀（~、~/、~\）宿主会展开而插件原样拼接。
+  现与 @deepseek-ai/dsh-home-paths 的行为一致，家目录解析回归新增空串分支。
+
+### 变更
+
+- **CI 补齐两道门禁**。路由契约 parity 检查与局外服务器冒烟此前只在本地 npm test 执行，CI 漏检，现已入列。
+- **发布物清理**。移除误随包发布的空文件 tools/gui-test-out.txt（发布物 46 个文件减为 45 个），
+  .gitignore 预防 .npmrc 误提交。
+- **开发回退路径去个人化**。测试与注释里的硬编码个人路径改为用户主目录。
+- **`tools/apply-dsh-patches.ps1` 补回 UTF-8 BOM**。该脚本含中文注释，中文 Windows PowerShell 5.1 按无 BOM 的 GBK 解析会破坏引号并抛解析错误；仓库里该文件长期缺 BOM，编码审计用例 25 因此判失败，本版按字节补回。
+
+### 测试
+
+- smoke 增至 317 项：home 级 settings.yaml 的脱敏入库、清单登记、vault 三文件、本机恢复回真值、diff 不泄露。
+- 家目录解析回归增至三分支（DSH_HOME 显式设置 / 未设置 / 空串）。
+
 ## [0.4.8] - 2026-09-16
 
 ### 新增
