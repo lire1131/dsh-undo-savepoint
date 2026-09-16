@@ -9,6 +9,7 @@ snapshots/
 # secrets
 .env
 .env.*
+.npmrc
 
 # logs
 *.log
