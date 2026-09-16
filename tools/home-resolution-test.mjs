@@ -90,9 +90,11 @@ async function parent() {
   const envHonored = { ...process.env, UNDO_HOME_TEST: 'honored', UNDO_HOME_TMP: tmpA, DSH_HOME: tmpA };
   const envDefault = { ...process.env, UNDO_HOME_TEST: 'default', UNDO_HOME_TMP: tmpB, USERPROFILE: tmpB, HOME: tmpB };
   delete envDefault.DSH_HOME;
+  const tmpC = await mkdtemp(join(tmpdir(), 'dsh-undo-home-c-'));
+  const envEmpty = { ...process.env, UNDO_HOME_TEST: 'empty', UNDO_HOME_TMP: tmpC, USERPROFILE: tmpC, HOME: tmpC, DSH_HOME: '' };
 
   let pass = 0, fail = 0;
-  for (const [label, env] of [['honored(DSH_HOME set)', envHonored], ['default(DSH_HOME unset)', envDefault]]) {
+  for (const [label, env] of [['honored(DSH_HOME set)', envHonored], ['default(DSH_HOME unset)', envDefault], ['empty(DSH_HOME="")', envEmpty]]) {
     console.log(`== ${label} ==`);
     const r = spawnSync(process.execPath, [SELF], { env, encoding: 'utf8', cwd: dirname(dirname(SELF)) });
     if (r.stdout) process.stdout.write(r.stdout);
