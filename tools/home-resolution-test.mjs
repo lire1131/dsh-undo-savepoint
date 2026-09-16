@@ -12,7 +12,7 @@
 // landed next to the DSH_HOME-based settings file.
 //
 // Run:  node tools/home-resolution-test.mjs   (parent spawns both branches)
-// Convention: like smoke-test.mjs, falls back to DSH_ROOT=C:/Users/yzf so
+// Convention: like smoke-test.mjs, falls back to DSH_ROOT=<user home> so
 // @deepseek-ai/dsh-tools resolves on dev machines without a local install.
 
 import { spawnSync } from 'node:child_process';
@@ -21,13 +21,13 @@ import { mkdtemp, mkdir, writeFile, readFile, readdir } from 'node:fs/promises';
 import { join, dirname } from 'node:path';
 import { tmpdir } from 'node:os';
 
-process.env.DSH_ROOT = process.env.DSH_ROOT ?? 'C:/Users/yzf';
+process.env.DSH_ROOT = process.env.DSH_ROOT ?? process.env.USERPROFILE ?? process.env.HOME ?? '';
 
 const SELF = fileURLToPath(import.meta.url);
 
 // ── child mode: run the assertions under the env the parent prepared ───────
 async function child() {
-  const mode = process.env.UNDO_HOME_TEST; // 'honored' | 'default'
+  const mode = process.env.UNDO_HOME_TEST; // 'honored' | 'default' | 'empty'
   const tmp = process.env.UNDO_HOME_TMP;
   const dshHome = mode === 'honored'
     ? process.env.DSH_HOME                     // DSH_HOME wins

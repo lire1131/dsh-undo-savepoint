@@ -1,6 +1,6 @@
 // tools/smoke-test.mjs — offline smoke test of dsh-undo-savepoint logic (no DSH needed).
 // Run:  node tools/smoke-test.mjs
-process.env.DSH_ROOT = process.env.DSH_ROOT ?? 'C:/Users/yzf';
+process.env.DSH_ROOT = process.env.DSH_ROOT ?? process.env.USERPROFILE ?? process.env.HOME ?? '';
 // 测试固定英文输出（V0.3.9 R7）：host 端随 DSH_UNDO_LANG 本地化，断言基于英文文案。
 process.env.DSH_UNDO_LANG = 'en';
 // 测试不碰真实桌面：DSH_UNDO_NO_DESKTOP=1 让 apply() 启动时的桌面快捷方式功能跳过。

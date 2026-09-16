@@ -4,7 +4,7 @@
 //   2. undo restores and does NOT trigger its own auto snapshot (suppression)
 //   3. redo then succeeds (would have been blocked before the fix)
 // Run:  node tools/e2e-watch.mjs
-process.env.DSH_ROOT = process.env.DSH_ROOT ?? 'C:/Users/yzf';
+process.env.DSH_ROOT = process.env.DSH_ROOT ?? process.env.USERPROFILE ?? process.env.HOME ?? '';
 // 测试固定英文输出（V0.3.9 R7）：host 端随 DSH_UNDO_LANG 本地化，断言基于英文文案。
 process.env.DSH_UNDO_LANG = 'en';
 import { mkdtemp, writeFile, readFile, mkdir, rm as rmRaw } from 'node:fs/promises';

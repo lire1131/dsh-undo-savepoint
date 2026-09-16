@@ -33,7 +33,7 @@ $manifest = Get-Content -LiteralPath $listPath -Raw -Encoding UTF8 | ConvertFrom
 # 不再回落到全局安装与用户级 node_modules，隔离实例（副本 DSH）靠它保证补丁只打
 # 副本树、绝不碰本体产物树。产品树判定要求同时存在 package.json 与 lib\bin.js，
 # 因为 DSH_ROOT 另有既存含义（dsh 依赖树解析根，测试与 CI 里指向 /tmp/dsh-fake15、
-# C:\Users\yzf 这类目录），那种目录不触发严格模式。未设置时保持原有优先级：
+# 用户主目录这类目录），那种目录不触发严格模式。未设置时保持原有优先级：
 # 全局 dsh 嵌套 > 全局顶层 > 用户级 > DSH_HOME。
 $cands = @()
 $productTree = $false
