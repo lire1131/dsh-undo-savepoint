@@ -64,7 +64,9 @@ Dreading DSH crashes? Afraid a tiny edit becomes a disaster? One-click rollback 
 
 ## Installation
 
-Prerequisites: DSH (`@deepseek-ai/dsh`) and Node.js (≥20).
+Prerequisites: DSH (`@deepseek-ai/dsh`) and Node.js (≥20). The host-mode plugin runs in profiles
+that provide the tools / systemPrompt / webServer services (any Web profile qualifies); when DSH
+cannot boot at all, use the offline CLI / GUI instead, which does not depend on the host.
 
 **Option A (GitHub direct)** — install the latest master commit:
 
@@ -73,6 +75,16 @@ dsh plugin --profile web add github:lire1131/dsh-undo-savepoint#master
 ```
 
 Restart DSH after installing. Snapshot directories and options are configurable in Settings.
+
+**Option C (npm registry)** — install from npm:
+
+```bat
+dsh plugin --profile web add dsh-undo-savepoint
+```
+
+`dsh plugin add` forwards to pnpm in the profile directory; this package declares
+`dsh.bundle.patch` in its `package.json`, so it is registered into the profile's bundle list
+automatically. Restart DSH to activate.
 
 **Option B (local source / pre-release)** — clone and mount manually:
 

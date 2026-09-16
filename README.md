@@ -79,7 +79,9 @@ v0.4.0 起核心抽取为纯 Node 零依赖模块（`lib/core.mjs` / `lib/zip.mj
 
 ## 安装
 
-前置：已安装 DSH（`@deepseek-ai/dsh`）与 Node.js（≥20）。
+前置：已安装 DSH（`@deepseek-ai/dsh`）与 Node.js（≥20）。宿主模式运行于提供
+tools / systemPrompt / webServer 服务的 profile（Web 型 profile 均满足）；
+DSH 完全无法启动时改用局外 CLI / GUI，不依赖宿主。
 
 ### 方式 A：GitHub 直装（推荐）
 
@@ -90,6 +92,15 @@ dsh plugin --profile web add github:lire1131/dsh-undo-savepoint#master
 ```
 
 安装完成后重启 DSH 即生效（快照目录、参数等均可在设置中修改）。
+
+### 方式 C：npm 源安装
+
+```bat
+dsh plugin --profile web add dsh-undo-savepoint
+```
+
+`dsh plugin add` 转发 pnpm 在 profile 目录完成安装，本包的 `package.json` 声明了
+`dsh.bundle.patch`，安装后自动登记进 profile 的 bundle 清单，重启 DSH 即生效。
 
 ### 方式 B：本地源码 / 免发布
 
