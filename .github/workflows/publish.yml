@@ -1,0 +1,38 @@
+name: publish
+
+on:
+  push:
+    tags: ['v*']
+
+# npm 发布仅对三段式稳定 tag 生效（v0.5.0）。canary tag（v0.5.0-canary.N）
+# 只触发 GitHub Release 产物构建，永不触碰 npm：job 级 if 排除一切含连字符
+# 的 tag。canary 的 Release 由人工 gh release 创建（canary 不进 CHANGELOG）。
+jobs:
+  npm-publish:
+    # canary 守卫：ref_name 含 '-' 一律跳过（v0.5.0-canary.1 等）
+    if: "!contains(github.ref_name, '-')"
+    runs-on: ubuntu-latest
+    permissions:
+      id-token: write   # npm OIDC（trust publishing，无令牌落盘）
+      contents: read
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          registry-url: https://registry.npmjs.org/
+      - name: Gates (same suite as CI)
+        run: |
+          node tools/check-size.mjs
+          node tools/check-version.mjs
+          node tools/check-routes.mjs
+          node tools/smoke-test.mjs
+          node tools/undo-server-smoke.mjs
+          node tools/home-resolution-test.mjs
+          node tools/e2e-watch.mjs
+        env:
+          DSH_ROOT: ${{ github.workspace }}
+      - name: Publish to npm (OIDC)
+        run: npm publish --provenance --access public
+        env:
+          NODE_AUTH_TOKEN: ""

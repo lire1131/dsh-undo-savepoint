@@ -18,7 +18,7 @@
       safemodeClick: '进入安全模式：禁用除本插件外的全部用户插件，处理完请重启 DSH 后退出。',
       safemodeOffClick: '退出安全模式，恢复之前的插件与 bundle？',
       crashBanner: '上次 DSH 启动未完成（可能崩溃）。',
-      lastGood: '最后已知良好快照', restoreGood: '恢复', lang: '语言', refresh: '刷新',
+      lastGood: '最后已知良好快照', restoreGood: '恢复', lang: '语言', refresh: '刷新', setBootHealth: '启动健康体检', setUpgradeGuard: 'DSH 升级护航',
       theme: '主题', themeAuto: '跟随系统', themeLight: '浅色', themeDark: '深色',
       manual: '手动', auto: '自动', pre: '撤销前', baseline: '基线', legacy: '旧版',
       stepAuto: '自动', preState: '撤销点', files: '个文件', profileFiles: '个配置文件',
@@ -43,7 +43,7 @@
       safemodeClick: 'Enter safe mode: disables every user plugin except this one. Restart DSH before exiting.',
       safemodeOffClick: 'Exit safe mode and restore the previous plugins/bundles?',
       crashBanner: 'Previous DSH run did not finish starting (likely crashed).',
-      lastGood: 'Last known-good snapshot', restoreGood: 'Restore', lang: 'language', refresh: 'refresh',
+      lastGood: 'Last known-good snapshot', restoreGood: 'Restore', lang: 'language', refresh: 'refresh', setBootHealth: 'Startup health check', setUpgradeGuard: 'DSH upgrade guard',
       theme: 'theme', themeAuto: 'follow system', themeLight: 'light', themeDark: 'dark',
       manual: 'manual', auto: 'auto', pre: 'undo point', baseline: 'baseline', legacy: 'legacy',
       stepAuto: 'auto', preState: 'undo point', files: 'files', profileFiles: 'config files',
@@ -476,6 +476,10 @@
           <label class="checkbox-row"><input type="checkbox" id="set-scheduleEnabled" ${s.scheduledSnapshotEnabled ? 'checked' : ''}> ${t('setScheduleEnabled')}</label>
           <div><label class="lbl">${t('setScheduleMs')}</label><input type="number" id="set-scheduleMs" value="${Math.round((s.scheduledSnapshotMs ?? 0) / 60000)}" min="1"></div>
         </div>
+        <label class="lbl">${t('setBootHealth')}</label>
+        <label class="checkbox-row"><input type="checkbox" id="set-bootHealth" ${s.bootHealthEnabled !== false ? 'checked' : ''}> ${s.bootHealthEnabled !== false ? '✅' : '⏸'}</label>
+        <label class="lbl">${t('setUpgradeGuard')}</label>
+        <label class="checkbox-row"><input type="checkbox" id="set-upgradeGuard" ${s.upgradeGuardEnabled !== false ? 'checked' : ''}> ${s.upgradeGuardEnabled !== false ? '✅' : '⏸'}</label>
       </div>
       <div class="panel-foot"><button class="btn" data-close>${t('cancel')}</button><button class="btn btn-primary" id="set-save">${t('save')}</button></div>`);
     $('#set-save').addEventListener('click', async () => {
@@ -494,6 +498,8 @@
           createDesktopShortcut: $('#set-desktop').checked,
           scheduledSnapshotEnabled: $('#set-scheduleEnabled').checked,
           scheduledSnapshotMs: Math.round((Number($('#set-scheduleMs').value) || 0) * 60000),
+          bootHealthEnabled: $('#set-bootHealth').checked,
+          upgradeGuardEnabled: $('#set-upgradeGuard').checked,
         });
         toast(`${t('saved')} ✓`, 'ok'); closePanel(); await refresh();
       } catch (e) { toast(e.message, 'err'); }

@@ -18,6 +18,14 @@
 2. 版本号一旦对外出现（commit / 文档 / release）**绝不回收复用**（`0.4.0→0.3.1` 回退事故——发布前预留的版本号被降级复用，导致 migration 文档版本引用错乱）
 3. 发布前三查：`package.json` version == tag == Release 标题；`npm run check-version` 绿
 
+### canary 分层发布（0.5.0 起）
+
+1. 实验版走 canary 通道：版本形态 `0.5.0-canary.N`（tag `v0.5.0-canary.N`），只发 git tag + GitHub Release，不发 npm、不进 CHANGELOG。
+2. 稳定版（三段式）才发 npm。canary 与 stable 的 tag == Release 标题 == `package.json` version 三处一致规则不变。
+3. canary 号一旦对外出现即用过的号，不回收复用（与三段式同规）。
+4. 发布工作流（`.github/workflows/publish.yml`）的 npm 发布 job 以 `!contains(github.ref_name, '-')` 排除一切含连字符的 tag，canary tag 永不触发 npm。
+5. `check-version.mjs` 的 SemVer 正则已接受 canary 形态，无需改动。
+
 ## 二、Commit 消息
 
 **格式：`<type>(<scope>?): <中文描述>`**（type 用英文标准词，描述统一中文，一条 commit 一个意图）

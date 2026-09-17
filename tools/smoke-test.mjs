@@ -6,6 +6,7 @@ process.env.DSH_UNDO_LANG = 'en';
 // 测试不碰真实桌面：DSH_UNDO_NO_DESKTOP=1 让 apply() 启动时的桌面快捷方式功能跳过。
 process.env.DSH_UNDO_NO_DESKTOP = '1';
 import { mkdtemp, writeFile, readFile, mkdir, rm as rmRaw, readdir, chmod, symlink, rmdir, realpath } from 'node:fs/promises';
+import { rmSync } from 'node:fs';
 import { join, dirname } from 'node:path';
 import { tmpdir } from 'node:os';
 import { fileURLToPath } from 'node:url';
@@ -1914,5 +1915,78 @@ console.log('== T3. undo_doctor fix=true: 预检修复的工具面（v0.4.8）==
 }
 
 await rm(root, { recursive: true, force: true });
+
+// ══ v0.5.0 additions ═════════════════════════════════════════════════════
+// 0.5.0 断言区：后续工单（W03/W05/W08/W12/W14/W18-W20/W22/W25/W26）的断言
+// 统一追加在本区段内。断言写法约定：独立块级作用域 { ... }，自建夹具自清理，
+// 不与上方历史测试段共享变量（root/home/profile 已被 rm，勿引用）。
+{
+  // 环境探针：让每次门禁输出都带环境指纹，排查平台差异断言数漂移用。
+  const hasZstdW = typeof (await import('node:zlib')).zstdDecompressSync === 'function';
+  console.log(`env: node ${process.version} platform=${process.platform} zstd=${hasZstdW}`);
+
+  // cfgW：0.5.0 断言区共享的最小配置（独立临时目录，用后自清）。
+  const rootW = await mkdtemp(join(tmpdir(), 'dsh-undo-w05-'));
+  const homeW = join(rootW, 'home');
+  const profileW = join(rootW, 'profile');
+  await mkdir(homeW, { recursive: true });
+  await mkdir(profileW, { recursive: true });
+  await writeFile(join(homeW, 'settings.yaml'), 'model: v1\n');
+  await writeFile(join(profileW, 'cordis.patch.yml'), '# patch\n[]\n');
+  await writeFile(join(profileW, 'package.json'), '{"name":"test","v":1}\n');
+  process.env.DSH_UNDO_SETTINGS = join(rootW, 'undo', 'settings.json');
+  process.env.DSH_UNDO_ROOT = join(rootW, 'undo-snapshots');
+  // cfgW 用字面量构造（不走 buildConfig）：core 的 SETTINGS_FILE / LEGACY_ROOT
+  // 是 import 时求值的模块常量，文件尾设 env 已太晚；且 buildConfig 不接受
+  // settingsFile 覆盖。所有 core 函数只吃纯数据 cfg，字面量即等价。
+  const cfgW = {
+    settingsFile: join(rootW, 'undo', 'settings.json'),
+    profileName: 'web',
+    homeDir: homeW,
+    profileDir: profileW,
+    manualDir: join(rootW, 'undo-snapshots', 'manual'),
+    autoDir: join(rootW, 'undo-snapshots', 'auto'),
+    sensitiveMode: 'redact',
+    keepAuto: 20,
+    keepPre: 10,
+    pluginDirs: [],
+    workspaceDirs: [],
+    bootAlert: null,
+    restoredHashes: new Map(),
+    suppressAuto: 0,
+  };
+  // 断言区夹具常驻到进程结束（exit 前 rm），后续工单断言块追加在本块内
+  // （`}` 之前），直接复用 cfgW / rootW / hasZstdW，无需重新构造。
+  process.on('exit', () => { try { rmSync(rootW, { recursive: true, force: true }); } catch { /* noop */ } });
+  check(typeof cfgW.manualDir === 'string', 'W04: 0.5.0 assertion zone cfgW ready');
+
+  // 后续工单断言块追加在本行之后（`}` 之前）。共用本区的 cfgW / rootW / hasZstdW。
+  const core = await import('../lib/core.mjs');
+
+  // W03: manifest 格式字段（schemaVersion / compression），只写不读。
+  {
+    const snapW03 = await core.createSnapshot(cfgW, 'manual', 'w03-field-check');
+    // createSnapshot 返回 manifest 对象本身（不含 _dir）；_dir 只由 listSnapshots 附加。
+    // 快照目录 = <manualDir>/<id>，故直接用返回的 id 拼路径。
+    const mW03 = JSON.parse(await readFile(join(cfgW.manualDir, snapW03.id, 'manifest.json'), 'utf8'));
+    check(mW03.schemaVersion === 1, 'W03: manifest carries schemaVersion=1');
+    check(mW03.compression === 'none', 'W03: manifest carries compression=none');
+  }
+
+  // W08: 快照审计——手工构造带明文的历史快照目录（绕过 createSnapshot 的脱敏）
+  {
+    const auditDir = join(cfgW.manualDir, 'aud-test-0001');
+    await mkdir(auditDir, { recursive: true });
+    await writeFile(join(auditDir, 'manifest.json'), JSON.stringify({ id: 'aud-test-0001', time: new Date().toISOString(), kind: 'manual', reason: 'audit-test', files: [{ name: 'home-settings.yaml', hash: 'x', size: 10 }], profile: 'web' }));
+    await writeFile(join(auditDir, 'home-settings.yaml'), 'api_key: sk-abcdef0123456789abcdef\n');
+    const r = await core.auditSnapshots(cfgW);
+    check(r.scanned >= 1, 'W08: audit sees the planted snapshot');
+    check(r.findings.some((f) => f.snapshot === 'aud-test-0001' && f.kind === 'api-key'), 'W08: plaintext api-key flagged');
+    await rm(auditDir, { recursive: true, force: true });
+    const r2 = await core.auditSnapshots(cfgW);
+    check(r2.ok === true, 'W08: clean store reports ok');
+  }
+}
+
 console.log(`\n== RESULT: ${pass} passed, ${fail} failed ==`);
 process.exit(fail > 0 ? 1 : 0);
