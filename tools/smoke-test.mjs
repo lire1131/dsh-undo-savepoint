@@ -1986,6 +1986,194 @@ await rm(root, { recursive: true, force: true });
     const r2 = await core.auditSnapshots(cfgW);
     check(r2.ok === true, 'W08: clean store reports ok');
   }
+
+  // W31: 首次挂载声明与确认（consent）。
+  // 断言口径说明（施工期决策，已登记核验报告 E23）：W31 的核心行为发生在
+  // apply() 内，但 apply 需要真实的 DSH ctx（工具经 peer 依赖
+  // @deepseek-ai/dsh-tools 的 defineTool 注册，且 ctx.effect 的回调必须真正
+  // 执行才会注册）；伪造 ctx 执行回调会启动真实 HTTP 服务与定时器并挂住测试
+  // 进程。因此本区只断言 consent 的纯契约面（可稳定验证），端到端由局内实测
+  // 与 W32 的卸载路径补齐。
+  {
+    // A1: 设置面新增两键且默认值正确（undefined = 从未确认）。
+    check('consent' in core.DEFAULT_SETTINGS && core.DEFAULT_SETTINGS.consent === undefined,
+      'W31: DEFAULT_SETTINGS.consent defaults to undefined (never confirmed)');
+    check('consentAt' in core.DEFAULT_SETTINGS && core.DEFAULT_SETTINGS.consentAt === null,
+      'W31: DEFAULT_SETTINGS.consentAt present and default null');
+
+    // A2: 文案完整性锚点（中英双份都含「undo-snapshots」与「22.15」），
+    // 且 getConsentText 按 DSH_UNDO_LANG 选语言，未设置时默认中文。
+    const zhText = core.getConsentText('zh');
+    const enText = core.getConsentText('en');
+    const anchorsOk = zhText.includes('undo-snapshots') && zhText.includes('22.15')
+      && enText.includes('undo-snapshots') && enText.includes('22.15');
+    check(anchorsOk, 'W31: CONSENT_TEXT zh/en both carry undo-snapshots and 22.15 anchors');
+
+    // A3: promptConsent 的三重缓解都可验证 —— 非 TTY 直通、环境变量逃生、
+    // 且两者都返回 asked=false（不读 stdin，避免测试挂住）。
+    const savedEnv = { noConsent: process.env.DSH_UNDO_NO_CONSENT, ttys: {} };
+    let nonTty = null;
+    let envSkip = null;
+    try {
+      process.env.DSH_UNDO_NO_CONSENT = '1';
+      delete process.stdin.isTTY;
+      envSkip = await core.promptConsent({});
+      process.env.DSH_UNDO_NO_CONSENT = '';
+      delete process.env.DSH_UNDO_NO_CONSENT;
+      nonTty = await core.promptConsent({});
+    } finally {
+      if (savedEnv.noConsent === undefined) delete process.env.DSH_UNDO_NO_CONSENT;
+      else process.env.DSH_UNDO_NO_CONSENT = savedEnv.noConsent;
+    }
+    check(envSkip?.accepted === true && envSkip?.asked === false && envSkip?.reason === 'env-skip',
+      'W31: promptConsent env escape hatch accepts without asking');
+    check(nonTty?.accepted === true && nonTty?.asked === false && nonTty?.reason === 'non-interactive',
+      'W31: promptConsent auto-accepts non-interactive stdin');
+  }
+
+  // W32: 一键卸载（planUninstall + applyUninstall）。
+  // 用真实 junction/文件夹具走核心函数（不 spawn CLI：本门禁从不派生子进程，
+  // 真 junction 在 win32 需开发者模式或管理员权限，故注入 opts.listLinks；
+  // removeLink 的原语行为已由真实 junction 单独验证过）。
+  {
+    const fxRoot = await mkdtemp(join(tmpdir(), 'dsh-undo-w32-'));
+    process.on('exit', () => { try { rmSync(fxRoot, { recursive: true, force: true }); } catch { /* noop */ } });
+    const fxHome = join(fxRoot, 'home');
+    const fxProfile = join(fxHome, 'profiles', 'web');
+    const fxDesktop = join(fxRoot, 'desktop');
+    const fxTarget = join(fxRoot, 'fake-dsh-undo-savepoint-plugin');
+    await mkdir(join(fxProfile, 'node_modules'), { recursive: true });
+    await mkdir(fxDesktop, { recursive: true });
+    await mkdir(join(fxHome, 'undo'), { recursive: true });
+    await mkdir(fxTarget, { recursive: true });
+    await writeFile(join(fxTarget, 'package.json'), '{"name":"dsh-undo-savepoint"}\n');
+    const fxPatch = join(fxProfile, 'cordis.patch.yml');
+    await writeFile(fxPatch, [
+      '# patch',
+      '- insert:',
+      '    - id: dsh-undo-savepoint',
+      '      name: dsh-undo-savepoint',
+      '',
+    ].join('\n'));
+    const fxLink = join(fxProfile, 'node_modules', 'dsh-undo-savepoint');
+    let fxLinkOk = false;
+    try {
+      await symlink(fxTarget, fxLink, process.platform === 'win32' ? 'junction' : 'dir');
+      fxLinkOk = true;
+    } catch { /* 平台不允许建链接：退化用注入的假 link 列表 */ }
+    const sp = core.desktopShortcutPlan({ desktopDir: fxDesktop });
+    await writeFile(sp.path, 'fake shortcut\n');
+    const linkProbe = fxLinkOk ? null : [{ path: fxLink, name: 'dsh-undo-savepoint', target: fxTarget, ok: true }];
+    const listLinksFn = async () => linkProbe ?? core.listLinks(join(fxProfile, 'node_modules'));
+
+    const fxCfg = core.buildConfig({ homeDir: fxHome, profileName: 'web' });
+    const planned = await core.planUninstall(fxCfg, { purge: false, desktopDir: fxDesktop, listLinks: listLinksFn });
+    check(planned.plan.some((x) => x.what === 'mount declaration'), 'W32: plan finds the patch mount declaration');
+    check(planned.plan.some((x) => x.what === 'junction'), 'W32: plan finds the plugin junction');
+    check(planned.plan.some((x) => x.what === 'shortcut'), 'W32: plan finds the desktop shortcut');
+    check(planned.plan.every((x) => x.what !== 'state dir' && x.what !== 'snapshot library'),
+      'W32: default plan keeps state dir and snapshot library');
+    check(planned.notes.some((n) => n.includes('kept: undo-snapshots')), 'W32: default plan notes the kept snapshot library');
+
+    const applied = await core.applyUninstall(planned.plan, { purge: false });
+    check(applied.removedMount === 1 && applied.removedJunction === 1 && applied.removedShortcut === 1 && applied.failed === 0,
+      `W32: apply removes mount/junction/shortcut (${applied.removedMount}/${applied.removedJunction}/${applied.removedShortcut}, failed=${applied.failed})`);
+    check(!(await core.pathExists(fxPatch)), 'W32: patch file deleted after its last entry was removed');
+    check(!(await core.pathExists(fxLink)) || !fxLinkOk, 'W32: junction removed');
+    check(!(await core.pathExists(sp.path)), 'W32: shortcut file removed');
+    check(await core.pathExists(join(fxTarget, 'package.json')), 'W32: junction target directory left intact');
+
+    const purged = await core.planUninstall(fxCfg, { purge: true, desktopDir: fxDesktop, listLinks: async () => [] });
+    check(purged.plan.some((x) => x.what === 'state dir'), 'W32: --purge plan includes the state dir');
+
+    // W32 兜底修（施工期发现）：无 mount 标记的扁平 patch（手工按 README 方式 B
+    // 挂载的情形）在摘掉条目后不能留下空的 `- insert:` 残壳。
+    const flatPatch = join(fxProfile, 'flat.patch.yml');
+    await writeFile(flatPatch, '# patch\n- insert:\n    - id: dsh-undo-savepoint\n      name: dsh-undo-savepoint\n');
+    await core.removeMountBlock(flatPatch);
+    const flatLeft = await readFile(flatPatch, 'utf8');
+    check(!flatLeft.includes('insert:'), 'W32: plain patch loses the emptied insert shell');
+
+    // 真实场景：Windows 编辑器存的 patch 带 UTF-8 BOM，摘空后同样要删掉文件
+    const bomPatch = join(fxProfile, 'bom.patch.yml');
+    await writeFile(bomPatch, '\uFEFF# patch\n- insert:\n    - id: dsh-undo-savepoint\n      name: dsh-undo-savepoint\n');
+    await core.removeMountBlock(bomPatch);
+    const bomApplied = await core.applyUninstall([{ what: 'mount declaration', path: bomPatch }]);
+    check(!(await core.pathExists(bomPatch)) && bomApplied.removedMount === 1,
+      'W32: BOM patch deleted after its last entry was removed');
+
+    // W31 语言路由（DSH_UNDO_LANG 显式设置时按该语言取文案）。
+    const savedLang = process.env.DSH_UNDO_LANG;
+    let routed = null;
+    try {
+      process.env.DSH_UNDO_LANG = 'en';
+      routed = core.getConsentText();
+    } finally {
+      if (savedLang === undefined) delete process.env.DSH_UNDO_LANG; else process.env.DSH_UNDO_LANG = savedLang;
+    }
+    check(routed === core.CONSENT_TEXT.en, 'W31: getConsentText follows DSH_UNDO_LANG');
+  }
+
+  // W33: 快捷方式防挂起。桌面相关的 powershell 调用都在 win32 正常路径上，
+  // 无超时则 powershell 无响应会永久挂住插件加载。
+  {
+    const coreSrc = await readFile(join(dirname(fileURLToPath(import.meta.url)), '..', 'lib', 'core.mjs'), 'utf8');
+    // 括号配平扫描每个 execFile(...) 调用（选项对象常跨多行，行级正则会误判）
+    const calls = [];
+    const scanRe = /execFile\s*\(/g;
+    let sm;
+    while ((sm = scanRe.exec(coreSrc)) !== null) {
+      let depth = 0;
+      let i = sm.index + sm[0].length - 1;
+      let inStr = null;
+      for (; i < coreSrc.length; i += 1) {
+        const c = coreSrc[i];
+        if (inStr) {
+          if (c === '\\') { i += 1; continue; }
+          if (c === inStr) inStr = null;
+          continue;
+        }
+        if (c === "'" || c === '"' || c === '`') { inStr = c; continue; }
+        if (c === '(') depth += 1;
+        else if (c === ')') { depth -= 1; if (depth === 0) break; }
+      }
+      calls.push(coreSrc.slice(sm.index, i + 1));
+    }
+    const noTimeout = calls.filter((c) => !/timeout\s*:/.test(c));
+    // E29 裁决：快捷方式路径上的四个外部工具调用（win32 ×2 powershell.exe、
+    // macOS xattr、Linux gio）都必须有界，任一挂起都会拖住插件加载。
+    check(noTimeout.length === 0, `W33: no unbounded execFile call remains (${noTimeout.length} of ${calls.length})`);
+    const all = calls.filter((c) => /'powershell\.exe'/.test(c));
+    check(all.length === 2 && all.every((c) => /timeout\s*:/.test(c)),
+      `W33: both win32 shortcut powershell calls carry a timeout (${all.length} found)`);
+    const macLinux = calls.filter((c) => /'(xattr|gio)'/.test(c));
+    check(macLinux.length === 2 && macLinux.every((c) => /timeout\s*:/.test(c)),
+      `W33: macOS xattr and Linux gio calls are bounded too (${macLinux.length} found)`);
+  }
+
+  // W34: doctor 环境预检两项（长路径风险 + Node 能力）。两项都只在条件命中时出现。
+  {
+    const longHome = 'C:\\' + 'verylongsegment\\'.repeat(16) + 'u';
+    const cfgLong = { ...cfgW, homeDir: longHome, profileName: 'web', profileDir: join(longHome, 'profiles', 'web') };
+    const repLong = await core.runDoctor(cfgLong, { platform: 'win32', nodeVersion: 'v22.15.0' });
+    const lp = repLong.checks.filter((c) => c.code === 'pre-long-path');
+    check(lp.length === 1 && lp[0].level === 'warn' && /\d{3} chars/.test(lp[0].detail),
+      `W34: long win32 home path warns with the measured length (${lp[0]?.detail ?? 'no check'})`);
+
+    const repShort = await core.runDoctor({ ...cfgW, homeDir: 'C:\\u' }, { platform: 'win32', nodeVersion: 'v22.15.0' });
+    check(repShort.checks.filter((c) => c.code === 'pre-long-path').length === 0,
+      'W34: short win32 home path stays clean');
+    const repLinux = await core.runDoctor(cfgLong, { platform: 'linux', nodeVersion: 'v22.15.0' });
+    check(repLinux.checks.filter((c) => c.code === 'pre-long-path').length === 0,
+      'W34: non-win32 never reports the long-path check');
+
+    const repOld = await core.runDoctor({ ...cfgW, homeDir: 'C:\\u' }, { nodeVersion: 'v20.11.0' });
+    const nc = repOld.checks.filter((c) => c.code === 'pre-node-capability');
+    check(nc.length === 1 && /undo_scan/.test(nc[0].detail), 'W34: Node below 22.15 warns about undo_scan');
+    const repNew = await core.runDoctor({ ...cfgW, homeDir: 'C:\\u' }, { nodeVersion: 'v22.15.0' });
+    check(repNew.checks.filter((c) => c.code === 'pre-node-capability').length === 0,
+      'W34: Node at the 22.15 threshold stays clean');
+  }
 }
 
 console.log(`\n== RESULT: ${pass} passed, ${fail} failed ==`);

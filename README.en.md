@@ -112,7 +112,53 @@ mklink /J "<your-dsh-install>\node_modules\dsh-undo-savepoint" "D:\dsh\plugins\d
 
 4. **Activate**: saving hot-reloads the host part; refresh the page to see the header buttons and settings rows; restart DSH for full steady state (legacy flat snapshots migrate automatically).
 
-> Dependency note: the host plugin loads `@deepseek-ai/dsh-tools` via `createRequire('<dsh-install-root>/package.json')`. If DSH lives elsewhere, set the environment variable `DSH_ROOT=<dsh-install-root>` — no extra package installation needed.
+> Dependency note: the host plugin loads `@deepseek-ai/dsh-tools` via `createRequire('<dsh-install-root>/package.json')`. If DSH lives elsewhere, set the environment variable `DSH_ROOT=<dsh-install-root>`, no extra package installation needed.
+
+## Uninstall
+
+### Standard uninstall
+
+Two commands; the second cleans up the leftovers:
+
+```bat
+dsh plugin remove dsh-undo-savepoint
+node tools\uninstall.mjs
+```
+
+`uninstall.mjs` is **gentle by default**: it removes mount declarations, junctions and the desktop shortcut, and **keeps the snapshot library and settings** (reinstalling restores your history). When the history is no longer needed, add `--purge`:
+
+```bat
+node tools\uninstall.mjs --purge
+```
+
+Common options:
+
+| Option | Effect |
+|---|---|
+| `--purge` | Also removes `undo\` (settings/state) and `undo-snapshots\` (snapshot library) |
+| `--yes` | Skip confirmation (required in non-interactive contexts, prevents scripted deletion) |
+| `--home <dir>` | Override the DSH home directory |
+| `--profile <n>` | Process only the named profile (default: all) |
+| `--json` | Print the cleanup plan as machine-readable JSON |
+
+Without `--yes` the command first lists **every path it will delete** and then asks. In a non-interactive context (CI, pipes) it refuses to run unless `--yes` is given explicitly.
+
+### Manual uninstall map
+
+If you really want to clean up by hand, these are the six locations and how to delete each correctly:
+
+| # | Location | Correct removal |
+|---|---|---|
+| 1 | `<dsh-install-root>\node_modules\dsh-undo-savepoint` (or under a profile's `node_modules`) | **Delete the link itself, do not follow it.** This is a junction; deleting it is safe. Browsing into it in Explorer and deleting the contents deletes your plugin source |
+| 2 | The `id: dsh-undo-savepoint` entry in `<DSH_HOME>\profiles\<profile>\cordis.patch.yml` | Remove that `insert` entry (or the whole item); an emptied file can be deleted |
+| 3 | `dsh-undo-savepoint` inside `dsh.profile.bundles` of `<DSH_HOME>\profiles\<profile>\package.json` | Remove the entry from the array |
+| 4 | `<DSH_HOME>\undo\` | Settings and state (including `settings.json`). Delete only if you want settings reset |
+| 5 | `<DSH_HOME>\undo-snapshots\` | The snapshot library. **Confirm you no longer need rollback** before deleting |
+| 6 | Desktop `dsh-undo-savepoint.lnk` (macOS `.command` / Linux `.desktop`) | Delete the file |
+
+### Windows long-path note
+
+With a deep or non-ASCII Windows user directory, snapshot paths can exceed Explorer's MAX_PATH limit of 260 characters, and a manual delete fails with "file name too long" or leaves a half-deleted mess. **Prefer `uninstall.mjs`**: it deletes the fixed set of paths directly without walking into snapshot internals, so the limit does not apply.
 
 ## Usage (inside DSH)
 

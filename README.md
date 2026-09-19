@@ -130,6 +130,52 @@ mklink /J "<你的DSH安装>\node_modules\dsh-undo-savepoint" "D:\dsh\plugins\ds
 
 > 依赖说明：host 插件通过 `createRequire('<DSH安装根>/package.json')` 加载 `@deepseek-ai/dsh-tools`。若 DSH 安装在其他位置，设置环境变量 `DSH_ROOT=<DSH安装根>` 即可，无需额外安装依赖。
 
+## 卸载
+
+### 标准卸载
+
+两条命令，第二条负责清理残留：
+
+```bat
+dsh plugin remove dsh-undo-savepoint
+node tools\uninstall.mjs
+```
+
+`uninstall.mjs` 默认**温和清理**：摘掉挂载声明、删掉 junction 与桌面快捷方式，**保留快照库与设置**（重装即可恢复历史快照）。确认不再需要历史快照时加 `--purge`：
+
+```bat
+node tools\uninstall.mjs --purge
+```
+
+常用参数：
+
+| 参数 | 作用 |
+|---|---|
+| `--purge` | 连带删除 `undo\`（设置/状态）与 `undo-snapshots\`（快照库） |
+| `--yes` | 跳过确认（非交互环境必须显式给出，防脚本误删） |
+| `--home <dir>` | 覆盖 DSH 主目录 |
+| `--profile <n>` | 只处理指定 profile（默认全部） |
+| `--json` | 输出机器可读的清理计划 |
+
+不带 `--yes` 时，命令先列出**每一项将要删除的路径**再询问；非交互环境（CI/管道）会拒绝执行，必须显式 `--yes`。
+
+### 手动卸载对照表
+
+确实要手动清理时，六处落盘位置与各自的正确删法：
+
+| # | 落盘位置 | 正确删法 |
+|---|---|---|
+| 1 | `<DSH安装根>\node_modules\dsh-undo-savepoint`（或 profile 的 `node_modules` 下） | **删除链接本体，勿跟随**。这是 junction，直接删除即可；在资源管理器里进入它再删内容，删的是你的插件源码 |
+| 2 | `<DSH_HOME>\profiles\<profile>\cordis.patch.yml` 里的 `id: dsh-undo-savepoint` 条目 | 手工摘掉该 `insert` 条目（可整条删）；文件变空可直接删文件 |
+| 3 | `<DSH_HOME>\profiles\<profile>\package.json` 的 `dsh.profile.bundles` 数组 | 从数组里移除 `dsh-undo-savepoint` 一项 |
+| 4 | `<DSH_HOME>\undo\` | 设置与状态（含 `settings.json`）。确认要重置设置时才删 |
+| 5 | `<DSH_HOME>\undo-snapshots\` | 快照库。**先确认不再需要回退**再删 |
+| 6 | 桌面 `dsh-undo-savepoint.lnk`（macOS `.command` / Linux `.desktop`） | 直接删除 |
+
+### Windows 长路径提示
+
+Windows 用户目录较深或使用中文用户名时，快照文件的路径可能超出资源管理器（MAX_PATH 260）的删除上限，手删会报「文件名过长」或删到一半留下残骸。**推荐用上面的 `uninstall.mjs`**：它按固定路径逐项删除，不遍历快照内部结构，不受该限制。
+
 ## 使用（DSH 内）
 
 - **撤销**：头部「撤销」按钮 / `Ctrl+Alt+Z` / 对 AI 说「撤销上一步」。
