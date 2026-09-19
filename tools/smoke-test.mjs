@@ -2174,6 +2174,36 @@ await rm(root, { recursive: true, force: true });
     check(repNew.checks.filter((c) => c.code === 'pre-node-capability').length === 0,
       'W34: Node at the 22.15 threshold stays clean');
   }
+
+  // W09: 会话普查——浅层计数 + 零字节异常 + 深层结构分类
+  {
+    const sessDir = join(homeW, 'sessions', 'census-test');
+    await mkdir(sessDir, { recursive: true });
+    await writeFile(join(sessDir, 'session.jsonl.zstd'), '');
+    const c = await core.sessionCensus(cfgW);
+    check(c.total >= 1, 'W09: census counts the planted session');
+    check(c.anomalous.some((a) => a.reason === 'zero-byte session log'),
+      'W09: zero-byte session log flagged anomalous');
+    const cd = await core.sessionCensus(cfgW, { deep: true });
+    if (cd.deep) {
+      check(cd.deep.corrupt >= 1, 'W09: deep classifies the empty log corrupt');
+    } else {
+      check(true, 'W09: deep scan skipped (no zstd API on this Node)');
+    }
+  }
+
+  // W10: 磁盘占用——体积必须真的累加到内容上，剩余空间可取或按可缺省为 null
+  {
+    const probeDir = join(homeW, 'sessions', 'usage-probe');
+    await mkdir(probeDir, { recursive: true });
+    await writeFile(join(probeDir, 'session.jsonl.zstd'), 'x'.repeat(4096));
+    const d = await core.diskUsage(cfgW);
+    check(typeof d.storeBytes === 'number' && d.storeBytes >= 0,
+      'W10: storeBytes is a non-negative number');
+    check(d.sessionsBytes >= 4096, `W10: sessionsBytes counts planted content (${d.sessionsBytes})`);
+    check(d.freeBytes === null || (typeof d.freeBytes === 'number' && d.freeBytes >= 0),
+      'W10: freeBytes is a non-negative number or null');
+  }
 }
 
 console.log(`\n== RESULT: ${pass} passed, ${fail} failed ==`);
