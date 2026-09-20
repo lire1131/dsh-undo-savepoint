@@ -2243,6 +2243,21 @@ await rm(root, { recursive: true, force: true });
     const bs = await core.readBootState(cfgW);
     check(bs?.bootFailStreak === 2, 'W30: bootFailStreak round-trips through boot-state.json');
   }
+
+  // W28: 启动守卫——透传启动（非 TTY + off）、--check 退出码、参数校验
+  {
+    const repoRootW = () => fileURLToPath(new URL('..', import.meta.url));
+    const { execFile } = await import('node:child_process');
+    const run = (args) => new Promise((resolve) => {
+      execFile(process.execPath, [join(repoRootW(), 'tools', 'guard.mjs'), ...args], { env: { ...process.env, DSH_UNDO_SETTINGS: cfgW.settingsFile, DSH_UNDO_ROOT: join(rootW, 'undo-snapshots'), DSH_HOME: homeW } }, (err, stdout) => resolve({ code: err ? err.code : 0, stdout: String(stdout) }));
+    });
+    const passthrough = await run(['--safe-mode', 'off', '--', process.execPath, '-e', "console.log('guarded-ok')"]);
+    check(passthrough.code === 0 && passthrough.stdout.includes('guarded-ok'), 'W28: guard passes through the guarded command');
+    const chk = await run(['--check']);
+    check(chk.stdout.includes('guard: --check 结束'), 'W28: --check mode reports and exits');
+    const bad = await run(['--safe-mode', 'wat']);
+    check(bad.code === 2, 'W28: invalid --safe-mode value rejected with code 2');
+  }
 }
 
 console.log(`\n== RESULT: ${pass} passed, ${fail} failed ==`);
