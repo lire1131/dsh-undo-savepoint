@@ -1599,6 +1599,23 @@ await cleanup(root30);
   const c5 = await runCase(target, mkcfg(join(proot, 'auto5')), allow, 'read');
   check(c5.got === allow && c5.files === 0, 'hook: 白名单外工具不拦截、结论原样');
 
+  // 六、路径归一化（0.5.0 次缺陷）：正斜杠与相对路径同样要记账；快照目录及
+  // 其边界的排除仍生效（不能因为归一化把 store 内写入或同前缀兄弟目录弄反）。
+  const fw = target.replace(/\\/g, '/');
+  const cF = await runCase(fw, mkcfg(join(proot, 'auto6')), deny);
+  check(cF.got === deny && cF.calls === 1 && cF.files === 1, 'hook: 正斜杠绝对路径同样记账（归一化后不再漏记）');
+  // 注意：跨盘符（仓库在 D:、临时目录在 C:）时 path.relative 会返回绝对路径，
+  // 等于没测到相对形态；相对路径用例必须落在当前工作盘符内，用一个不存在的
+  // 相对路径即可（钩子只读文件，不存在就记 beforeExists=false）。
+  const cfgR = { ...mkcfg(join(proot, 'auto7')), workspaceDirs: [process.cwd()] };
+  const cR = await runCase(join('tools', '__hook-rel-probe.txt'), cfgR, deny);
+  check(cR.got === deny && cR.calls === 1 && cR.files === 1, 'hook: 相对路径（按 cwd 解析）同样记账');
+  const cfg8 = mkcfg(join(proot, 'auto8'));
+  const cS = await runCase(join(cfg8.manualDir, 'inside-store.txt'), cfg8, deny);
+  check(cS.got === deny && cS.files === 0, 'hook: 快照目录内的写入仍被排除（归一化未造成过度追踪）');
+  const cB = await runCase(join(proot, 'manual-extra', 'sibling.txt'), mkcfg(join(proot, 'auto9')), deny);
+  check(cB.got === deny && cB.files === 1, 'hook: 同前缀兄弟目录不再被误排除（目录边界按分隔符切）');
+
   // 五、接线断言：index.js 必须用工厂注册，防止退回内联实现
   const idxSrc = await readFile(new URL('../lib/index.js', import.meta.url), 'utf8');
   check(idxSrc.includes("ctx.on('tools/pre-execute', makePreExecuteListener({"), 'hook: index.js 通过 makePreExecuteListener 注册（防退回内联实现）');
