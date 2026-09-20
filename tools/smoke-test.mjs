@@ -2225,6 +2225,17 @@ await rm(root, { recursive: true, force: true });
       'W12: empty store triggers snapshot-none finding');
     check(h.findings.length > 0 && h.findings.every((f) => ['warn', 'err'].includes(f.level) && f.detail.length > 0), 'W12: findings well-formed');
   }
+
+  // W18: 升级检测状态机——首次只记录，版本变化才算升级，探测失败静默 null
+  {
+    const v = await core.readDshVersion();
+    check(v === null || typeof v === 'string', 'W18: readDshVersion returns string or null');
+    const g1 = await core.dshVersionGuard(cfgW);
+    check(g1.changed === false, 'W18: first run records without upgrade event');
+    await core.persistVersionState(cfgW, g1.state);
+    const g2 = await core.dshVersionGuard(cfgW);
+    check(g2.changed === false && g2.previous === null, 'W18: same version re-run is not an upgrade');
+  }
 }
 
 console.log(`\n== RESULT: ${pass} passed, ${fail} failed ==`);
