@@ -1548,6 +1548,63 @@ await cleanup(root30);
   await rm(mroot, { recursive: true, force: true });
 }
 
+// ── 0.5.0 修复：pre-execute 钩子吞掉瀑布返回值（write/edit 反斜杠路径必崩）──
+// 背景：tools/pre-execute 是瀑布事件，返回的是最外层监听器的返回值；钩子只
+// await next() 不返回时，工具层读 gate.kind 报 Cannot read properties of
+// undefined (reading 'kind')（已核对 cordis waterfall 与 dsh-tools prepareExecution）。
+{
+  const core = await import('../lib/core.mjs');
+  const proot = await mkdtemp(join(tmpdir(), 'dsh-undo-hook-'));
+  const mkcfg = (autoDir) => ({ autoDir, manualDir: join(proot, 'manual'), workspaceDirs: [proot], fileToolWhitelist: ['write', 'edit'], keepMessageOps: 200, profileName: 'hook' });
+  const target = join(proot, 'hooked.txt');
+  await writeFile(target, 'before-1');
+  const allow = { kind: 'allow' };
+  const deny = { kind: 'deny' };
+  const runCase = async (p, cfg, verdict, tool = 'write') => {
+    const warns = [];
+    let calls = 0;
+    let fellThrough = 0;
+    // 模拟 cordis 的 next()：第一次调用交出下游结论，之后再调只会落到最内层默认 allow
+    const next = async () => { calls++; if (calls === 1) return verdict; fellThrough++; return { kind: 'allow' }; };
+    const listener = core.makePreExecuteListener({ cfg, logger: { warn: (m) => warns.push(String(m)) } });
+    const got = await listener({ name: tool, arguments: { path: p }, agent: { messageId: 'h1' } }, next);
+    const ops = await core.listMessageOps(cfg).catch(() => []);
+    return { got, calls, fellThrough, files: ops.reduce((n, b) => n + b.files, 0), warns };
+  };
+
+  // 一、反斜杠绝对路径（Windows 上工作区内最常见的写法）：结论必须原样传下去
+  const c1 = await runCase(target, mkcfg(join(proot, 'auto1')), deny);
+  check(c1.got === deny, 'hook: 反斜杠绝对路径把 next() 的返回值原样传下去（不再返回 undefined）');
+  check(c1.calls === 1, 'hook: next() 只被调用一次（二次调用会把下游结论覆盖成默认 allow）');
+  check(c1.files === 1, 'hook: 反斜杠绝对路径的工作区写入被记入消息级台账');
+
+  // 二、大文件分支：放行且不记账，返回值同样不能吞
+  const big = join(proot, 'big.bin');
+  await writeFile(big, Buffer.alloc(300 * 1024, 65));
+  const c2 = await runCase(big, mkcfg(join(proot, 'auto2')), allow);
+  check(c2.got === allow && c2.calls === 1 && c2.files === 0, 'hook: >256KB 文件放行且不记账，返回值原样');
+
+  // 三、后置记账失败：必须仍然返回下游结论。把 <autoDir>/message-ops 占成文件，
+  // 使前置采集正常、appendMessageOp 的 mkdir 报错（ENOTDIR/EEXIST）。
+  const cfg3 = mkcfg(join(proot, 'auto3'));
+  await mkdir(cfg3.autoDir, { recursive: true });
+  await writeFile(join(cfg3.autoDir, 'message-ops'), 'x');
+  const c3 = await runCase(target, cfg3, deny);
+  check(c3.got === deny, 'hook: 后置记账失败也不改判（deny 仍是 deny，不被默认 allow 覆盖）');
+  check(c3.calls === 1 && c3.warns.length === 1 && /message-ops/.test(c3.warns[0]), 'hook: 后置记账失败只告警一次（告警指向 message-ops），next() 仍只调用一次');
+
+  // 四、追踪范围外与白名单外：直接放行，结论原样
+  const c4 = await runCase(join(tmpdir(), 'outside-hooked.txt'), mkcfg(join(proot, 'auto4')), deny);
+  check(c4.got === deny && c4.files === 0, 'hook: 追踪范围外的写入直接放行且不记账');
+  const c5 = await runCase(target, mkcfg(join(proot, 'auto5')), allow, 'read');
+  check(c5.got === allow && c5.files === 0, 'hook: 白名单外工具不拦截、结论原样');
+
+  // 五、接线断言：index.js 必须用工厂注册，防止退回内联实现
+  const idxSrc = await readFile(new URL('../lib/index.js', import.meta.url), 'utf8');
+  check(idxSrc.includes("ctx.on('tools/pre-execute', makePreExecuteListener({"), 'hook: index.js 通过 makePreExecuteListener 注册（防退回内联实现）');
+  await rm(proot, { recursive: true, force: true });
+}
+
 // ── V0.4.0 P7: undo_compact — orphan blob GC + message-ops ref protection ─────
 {
   const core = await import('../lib/core.mjs');
