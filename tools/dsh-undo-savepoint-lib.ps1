@@ -9,6 +9,14 @@
 # The same environment overrides as the Node plugin are honored
 # (DSH_UNDO_ROOT / DSH_UNDO_SETTINGS).
 
+# DEPRECATION NOTICE (v0.5.0): the PowerShell tooling (GUI + CLI) enters its
+# deprecation period and will be removed in 0.6.0. The Node-based offline WebUI
+# is the replacement:  node tools\undo-server.mjs
+# Set DSH_UNDO_NO_DEPRECATION_NOTICE=1 to silence this banner.
+if (-not $env:DSH_UNDO_NO_DEPRECATION_NOTICE) {
+    Write-Host 'dsh-undo-savepoint: PowerShell 工具已进入弃用期，0.6.0 将移除。替代方案：node tools\undo-server.mjs' -ForegroundColor Yellow
+}
+
 $script:DshHome = if ($env:DSH_HOME) { $env:DSH_HOME } else { Join-Path $env:USERPROFILE '.dsh' }
 $script:UndoSnapshotRoot = if ($env:DSH_UNDO_ROOT) { $env:DSH_UNDO_ROOT } else { Join-Path $script:DshHome 'undo-snapshots' }
 $script:UndoLegacyRoot = $script:UndoSnapshotRoot

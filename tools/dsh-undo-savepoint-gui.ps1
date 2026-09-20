@@ -210,7 +210,7 @@ function Get-StoreLabel([string]$Store) {
 
 $form = New-Object System.Windows.Forms.Form
 # v0.3.2: title shows the current sensitive mode (redact / keep) at a glance
-$form.Text = "$($script:UI.title) · $((Get-UndoSettings).sensitiveMode)"
+$form.Text = "$($script:UI.title) · $((Get-UndoSettings).sensitiveMode) · deprecated (removed in 0.6.0)"
 $form.Size = New-Object System.Drawing.Size(1080, 640)
 $form.MinimumSize = New-Object System.Drawing.Size(820, 440)
 $form.StartPosition = 'CenterScreen'
