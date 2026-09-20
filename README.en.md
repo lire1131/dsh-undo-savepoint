@@ -1,13 +1,13 @@
-# dsh-undo-savepoint — Undo/rollback system for DSH
+# dsh-undo-savepoint — Security caretaker for DSH (undo / rollback / crash rescue)
 
 [![awesome · DSH plugin](https://awesome-dsh-plugin.com/badge.svg)](https://awesome-dsh-plugin.com)
 [![CI](https://github.com/lire1131/dsh-undo-savepoint/actions/workflows/ci.yml/badge.svg)](https://github.com/lire1131/dsh-undo-savepoint/actions/workflows/ci.yml)
 
 > English | [中文](README.md) | [Changelog](CHANGELOG.en.md)
 
-**An undo/rollback system for [DeepSeek Harness (DSH)](https://github.com/deepseek-ai/deepseek-harness): every plugin install, skin switch or settings change is auto-snapshotted; manual saves whenever you want; one-click undo / redo / restore to any version. And when DSH won't even boot, the offline WebUI / GUI / CLI still have your back.**
+**A security caretaker for [DeepSeek Harness (DSH)](https://github.com/deepseek-ai/deepseek-harness): every settings change is auto-snapshotted, with one-click undo / redo / restore to any version; proactive health checks, upgrade guarding, and crash rescue; and when DSH won't even boot, the offline WebUI / GUI / CLI still work.**
 
-Dreading DSH crashes? Afraid a tiny edit becomes a disaster? One-click rollback of configs and plugin code, secret-redacted snapshots, one-click SAFE MODE — you can always rescue yourself.
+The caretaker checks proactively and speaks only when something is wrong. The first health check completes 30 seconds after startup; after a crash it names the last-known-good snapshot to restore; and when the DSH version changes it takes an upgrade-insurance snapshot before letting the session continue.
 
 ## Preview
 
@@ -18,6 +18,17 @@ Dreading DSH crashes? Afraid a tiny edit becomes a disaster? One-click rollback 
 | Offline WebUI: crash banner + Undo / Redo / Safe mode / Diagnose / Message undo / Settings — works even when DSH won't boot (snapshot diff & settings: see [Offline tools](#offline-tools-work-even-when-dsh-wont-boot)) |
 |---|
 | ![gui](https://cdn.jsdelivr.net/gh/lire1131/dsh-undo-savepoint@master/docs/shots/gui-main.en.png) |
+
+## The caretaker
+
+| Duty | Capability |
+|---|---|
+| Startup health check | 30 seconds after startup it inspects session directories, tolerance patches, snapshot coverage and disk usage, alerting only on findings |
+| Crash rescue | When DSH cannot boot at all, SAFE MODE keeps only this plugin so boot is guaranteed; crash attribution names the last-known-good snapshot for one-click restore |
+| Session doctor | undo_scan repairs single-frame layout violations and seq overlaps in session files; what it cannot repair is quarantined, originals untouched |
+| Upgrade guard | On a detected DSH version change it takes an upgrade-insurance snapshot, then the first post-upgrade boot produces a compatibility and session-census report |
+| Snapshots stay secret | .env, credentials and home-level settings are redacted in snapshots, real values live only in the local vault, export bundles leak nothing |
+| Tolerance patches | Runtime fallbacks for known defect points of past DSH builds; they simply stop matching once upstream fixes land, with no functional impact |
 
 ## Core capabilities
 

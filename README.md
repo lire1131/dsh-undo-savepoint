@@ -1,13 +1,13 @@
-# dsh-undo-savepoint — DSH 撤销/回退系统
+# dsh-undo-savepoint — DSH 安全管家（撤销 / 回退 / 崩溃自愈）
 
 [![awesome · DSH plugin](https://awesome-dsh-plugin.com/badge.svg)](https://awesome-dsh-plugin.com)
 [![CI](https://github.com/lire1131/dsh-undo-savepoint/actions/workflows/ci.yml/badge.svg)](https://github.com/lire1131/dsh-undo-savepoint/actions/workflows/ci.yml)
 
 > 中文 | [English](README.en.md) | [更新日志](CHANGELOG.md)
 
-**为 [DeepSeek Harness (DSH)](https://github.com/deepseek-ai/deepseek-harness) 打造的撤销/回退系统：装插件、换皮肤、改设置，自动保存即存档；手动保存随时存档；一键撤销 / 恢复 / 回退到任意版本。DSH 启动不了时，还有局外 WebUI / GUI / CLI 兜底。**
+**为 [DeepSeek Harness (DSH)](https://github.com/deepseek-ai/deepseek-harness) 打造的安全管家：改设置自动存档，一键撤销 / 恢复 / 回退到任意版本；主动体检、升级护航、崩溃自愈；DSH 起不来时局外 WebUI / GUI / CLI 依然可用。**
 
-还在为 DSH 崩溃而苦恼？还在担心小改动带来大灾难？配置与插件代码一键回滚、快照密钥脱敏、一键安全模式——DSH 挂了也能自救。
+管家的做事方式是主动检查，有异常才说话，正常时安静。启动 30 秒后完成第一次体检；崩溃后给出可回退的最后正常快照；检测到 DSH 版本变化时先打升级保险快照再放行。
 
 ## 预览
 
@@ -22,6 +22,17 @@
 | 局外 WebUI：崩溃横幅 + 撤销 / 重做 / 安全模式 / 诊断 / 对话撤回 / 设置，不依赖 DSH 运行（快照对比与设置见[局外工具](#局外工具dsh-挂了也能用)一节） |
 |---|
 | ![gui](https://cdn.jsdelivr.net/gh/lire1131/dsh-undo-savepoint@95230c2/docs/shots/gui-main.png) |
+
+## 安全管家
+
+| 管家职责 | 对应能力 |
+|---|---|
+| 启动健康体检 | 启动 30 秒后自动检查会话目录、容错补丁、快照覆盖与磁盘占用，有异常才告警 |
+| 崩溃自愈 | DSH 完全起不来时一键安全模式，只保留本插件保证能启动；崩溃归因给出最后正常快照，一键回退 |
+| 会话医生 | undo_scan 扫描会话文件，修复单帧布局违规与 seq 重叠两类损伤，修不了的隔离，绝不动原件 |
+| 升级护航 | 检测到 DSH 版本变化自动打升级保险快照，升级后首次启动出兼容体检与会话普查报告 |
+| 快照不泄密 | .env、凭据、home 级设置进快照自动脱敏，真实值只存本机 vault，导出包零泄露 |
+| 容错补丁 | 对 DSH 历史版本的已知缺陷点做运行时兜底，官方修复后补丁自然失效，不影响功能 |
 
 ## 核心能力
 
