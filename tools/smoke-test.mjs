@@ -2236,6 +2236,13 @@ await rm(root, { recursive: true, force: true });
     const g2 = await core.dshVersionGuard(cfgW);
     check(g2.changed === false && g2.previous === null, 'W18: same version re-run is not an upgrade');
   }
+
+  // W30: 崩溃自愈——bootFailStreak 持久化语义（writeBootState 携带、readBootState 读回）
+  {
+    await core.writeBootState(cfgW, { startedAt: 'x', pid: 1, ok: false, crashReason: null, bootFailStreak: 2 });
+    const bs = await core.readBootState(cfgW);
+    check(bs?.bootFailStreak === 2, 'W30: bootFailStreak round-trips through boot-state.json');
+  }
 }
 
 console.log(`\n== RESULT: ${pass} passed, ${fail} failed ==`);
