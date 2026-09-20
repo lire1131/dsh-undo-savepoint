@@ -2204,6 +2204,27 @@ await rm(root, { recursive: true, force: true });
     check(d.freeBytes === null || (typeof d.freeBytes === 'number' && d.freeBytes >= 0),
       'W10: freeBytes is a non-negative number or null');
   }
+
+  // W11: 补丁状态聚合——任何环境下都返回结构化结果（含错误分支）
+  {
+    const p = await core.patchStatus(cfgW);
+    check(typeof p.ok === 'boolean' && typeof p.missing === 'number', 'W11: patchStatus returns structured result');
+    check(typeof p.reason === 'string' && p.reason.length > 0, 'W11: patchStatus always carries a reason');
+  }
+
+  // W12: 体检聚合——四维报告 + 告警规则。空仓库断言改用独立空配置（前提修正：
+  // cfgW 在 W03 段已建过快照，且 listSnapshots 还会扫 LEGACY_ROOT）。
+  {
+    const emptyRoot = join(rootW, 'w12-empty');
+    const emptyCfg = { ...cfgW, homeDir: join(emptyRoot, 'home'), profileDir: join(emptyRoot, 'profile'), manualDir: join(emptyRoot, 'manual'), autoDir: join(emptyRoot, 'auto') };
+    const h = await core.healthCheck(cfgW);
+    check(typeof h.ts === 'string' && typeof h.sessions.total === 'number' && typeof h.snapshots.total === 'number' && Array.isArray(h.findings),
+      'W12: healthCheck returns the four-dimension report');
+    const he = await core.healthCheck(emptyCfg);
+    check(he.snapshots.total === 0 && he.findings.some((f) => f.code === 'snapshot-none'),
+      'W12: empty store triggers snapshot-none finding');
+    check(h.findings.length > 0 && h.findings.every((f) => ['warn', 'err'].includes(f.level) && f.detail.length > 0), 'W12: findings well-formed');
+  }
 }
 
 console.log(`\n== RESULT: ${pass} passed, ${fail} failed ==`);
