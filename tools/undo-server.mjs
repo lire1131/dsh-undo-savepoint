@@ -245,6 +245,8 @@ const server = createServer(async (req, res) => {
           cfg.createDesktopShortcut = body.createDesktopShortcut;
           if (body.createDesktopShortcut) void ensureDesktopShortcut(cfg).catch(() => { /* 尽力而为 */ });
         }
+        // v0.5.0：启动体检开关（局外设置面板的复选框同样要能落盘）
+        if (typeof body.bootHealthEnabled === 'boolean') cfg.bootHealthEnabled = body.bootHealthEnabled;
         // 关键：写回完整 publicSettings，绝不丢其他键（保证局内/局外同步）
         await fs.mkdir(dirname(SETTINGS_FILE), { recursive: true });
         await fs.writeFile(SETTINGS_FILE, JSON.stringify(publicSettings(cfg), null, 2), 'utf8');
