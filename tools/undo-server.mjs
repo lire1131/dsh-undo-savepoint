@@ -247,6 +247,8 @@ const server = createServer(async (req, res) => {
         }
         // v0.5.0：启动体检开关（局外设置面板的复选框同样要能落盘）
         if (typeof body.bootHealthEnabled === 'boolean') cfg.bootHealthEnabled = body.bootHealthEnabled;
+        // v0.5.0 F3：DSH 升级护航开关（局外设置面板的复选框同样要能落盘）
+        if (typeof body.upgradeGuardEnabled === 'boolean') cfg.upgradeGuardEnabled = body.upgradeGuardEnabled;
         // 关键：写回完整 publicSettings，绝不丢其他键（保证局内/局外同步）
         await fs.mkdir(dirname(SETTINGS_FILE), { recursive: true });
         await fs.writeFile(SETTINGS_FILE, JSON.stringify(publicSettings(cfg), null, 2), 'utf8');
