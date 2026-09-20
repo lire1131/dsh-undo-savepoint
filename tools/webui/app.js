@@ -18,7 +18,7 @@
       safemodeClick: '进入安全模式：禁用除本插件外的全部用户插件，处理完请重启 DSH 后退出。',
       safemodeOffClick: '退出安全模式，恢复之前的插件与 bundle？',
       crashBanner: '上次 DSH 启动未完成（可能崩溃）。',
-      lastGood: '最后已知良好快照', restoreGood: '恢复', lang: '语言', refresh: '刷新', setBootHealth: '启动健康体检', setUpgradeGuard: 'DSH 升级护航', autoSafeModeNote: '已自动进入安全模式（连续启动未完成）', setAutoHeal: '连续启动失败时自动进入安全模式（次数）',
+      lastGood: '最后已知良好快照', restoreGood: '恢复', lang: '语言', refresh: '刷新', setBootHealth: '启动健康体检', setUpgradeGuard: 'DSH 升级护航', autoSafeModeNote: '已自动进入安全模式（连续启动未完成）', setAutoHeal: '连续启动失败时自动进入安全模式（次数）', setGuardShortcut: '创建「DSH 安全启动」桌面快捷方式（守卫入口）', setGuardMode: '守卫发现启动受阻时', setGuardAsk: '询问（10 秒默认进入安全模式）', setGuardOn: '自动进入安全模式', setGuardOff: '只提醒不处理',
       theme: '主题', themeAuto: '跟随系统', themeLight: '浅色', themeDark: '深色',
       manual: '手动', auto: '自动', pre: '撤销前', baseline: '基线', legacy: '旧版',
       stepAuto: '自动', preState: '撤销点', files: '个文件', profileFiles: '个配置文件',
@@ -43,7 +43,7 @@
       safemodeClick: 'Enter safe mode: disables every user plugin except this one. Restart DSH before exiting.',
       safemodeOffClick: 'Exit safe mode and restore the previous plugins/bundles?',
       crashBanner: 'Previous DSH run did not finish starting (likely crashed).',
-      lastGood: 'Last known-good snapshot', restoreGood: 'Restore', lang: 'language', refresh: 'refresh', setBootHealth: 'Startup health check', setUpgradeGuard: 'DSH upgrade guard', autoSafeModeNote: 'Safe mode entered automatically (repeated failed boots)', setAutoHeal: 'Auto-enter safe mode after N failed boots',
+      lastGood: 'Last known-good snapshot', restoreGood: 'Restore', lang: 'language', refresh: 'refresh', setBootHealth: 'Startup health check', setUpgradeGuard: 'DSH upgrade guard', autoSafeModeNote: 'Safe mode entered automatically (repeated failed boots)', setAutoHeal: 'Auto-enter safe mode after N failed boots', setGuardShortcut: 'Create the "DSH guarded launch" desktop shortcut', setGuardMode: 'When the guard finds boot blockers', setGuardAsk: 'Ask (auto safe-mode after 10s)', setGuardOn: 'Enter safe mode automatically', setGuardOff: 'Warn only',
       theme: 'theme', themeAuto: 'follow system', themeLight: 'light', themeDark: 'dark',
       manual: 'manual', auto: 'auto', pre: 'undo point', baseline: 'baseline', legacy: 'legacy',
       stepAuto: 'auto', preState: 'undo point', files: 'files', profileFiles: 'config files',
@@ -480,6 +480,11 @@
         <label class="checkbox-row"><input type="checkbox" id="set-bootHealth" ${s.bootHealthEnabled !== false ? 'checked' : ''}> ${s.bootHealthEnabled !== false ? '✅' : '⏸'}</label>
         <label class="lbl">${t('setUpgradeGuard')}</label>
         <label class="checkbox-row"><input type="checkbox" id="set-upgradeGuard" ${s.upgradeGuardEnabled !== false ? 'checked' : ''}> ${s.upgradeGuardEnabled !== false ? '✅' : '⏸'}</label>
+        <label class="lbl">${t('setGuardMode')}</label>
+        <label class="checkbox-row"><input type="radio" name="set-guardmode" id="set-guard-ask" ${s.guardAutoSafeMode !== 'on' && s.guardAutoSafeMode !== 'off' ? 'checked' : ''}> ${t('setGuardAsk')}</label>
+        <label class="checkbox-row"><input type="radio" name="set-guardmode" id="set-guard-on" ${s.guardAutoSafeMode === 'on' ? 'checked' : ''}> ${t('setGuardOn')}</label>
+        <label class="checkbox-row"><input type="radio" name="set-guardmode" id="set-guard-off" ${s.guardAutoSafeMode === 'off' ? 'checked' : ''}> ${t('setGuardOff')}</label>
+        <label class="checkbox-row"><input type="checkbox" id="set-guardShortcut" ${s.guardShortcutEnabled ? 'checked' : ''}> ${t('setGuardShortcut')}</label>
         <label class="lbl">${t('setAutoHeal')}</label><input type="number" id="set-autoHeal" value="${s.autoSafeModeAfterFails ?? 2}" min="0">
       </div>
       <div class="panel-foot"><button class="btn" data-close>${t('cancel')}</button><button class="btn btn-primary" id="set-save">${t('save')}</button></div>`);
@@ -501,6 +506,8 @@
           scheduledSnapshotMs: Math.round((Number($('#set-scheduleMs').value) || 0) * 60000),
           bootHealthEnabled: $('#set-bootHealth').checked,
           upgradeGuardEnabled: $('#set-upgradeGuard').checked,
+          guardAutoSafeMode: $('#set-guard-on').checked ? 'on' : $('#set-guard-off').checked ? 'off' : 'ask',
+          guardShortcutEnabled: $('#set-guardShortcut').checked,
           autoSafeModeAfterFails: Math.max(0, Number($('#set-autoHeal').value) || 0),
         });
         toast(`${t('saved')} ✓`, 'ok'); closePanel(); await refresh();

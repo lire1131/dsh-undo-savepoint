@@ -2258,6 +2258,14 @@ await rm(root, { recursive: true, force: true });
     const bad = await run(['--safe-mode', 'wat']);
     check(bad.code === 2, 'W28: invalid --safe-mode value rejected with code 2');
   }
+
+  // W29: 守卫快捷方式计划——三平台形态与默认跳过
+  {
+    const pWin = core.guardShortcutPlan({ platform: 'win32', desktopDir: 'C:\\Users\\t\\Desktop', pluginRoot: repoRoot });
+    check(pWin.kind === 'lnk' && pWin.target.endsWith('launch-dsh-guard.bat'), 'W29: win32 guard shortcut targets the bat');
+    const skip = await core.ensureGuardShortcut({ guardShortcutEnabled: false });
+    check(skip.action === 'skipped', 'W29: guard shortcut skipped by default');
+  }
 }
 
 console.log(`\n== RESULT: ${pass} passed, ${fail} failed ==`);

@@ -51,6 +51,7 @@ import {
   listMessageOps,
   undoMessage,
   ensureDesktopShortcut,
+  ensureGuardShortcut,
   t,
 } from '../lib/core.mjs';
 
@@ -251,6 +252,12 @@ const server = createServer(async (req, res) => {
         if (typeof body.upgradeGuardEnabled === 'boolean') cfg.upgradeGuardEnabled = body.upgradeGuardEnabled;
         // v0.5.0 F3：崩溃自愈阈值（0 = 关闭）
         if (Number.isFinite(body.autoSafeModeAfterFails)) cfg.autoSafeModeAfterFails = Math.max(0, Math.round(body.autoSafeModeAfterFails));
+        // v0.5.0 W29：守卫处置档与守卫快捷方式开关（勾选即建，与桌面快捷方式同款）
+        if (body.guardAutoSafeMode === 'ask' || body.guardAutoSafeMode === 'on' || body.guardAutoSafeMode === 'off') cfg.guardAutoSafeMode = body.guardAutoSafeMode;
+        if (typeof body.guardShortcutEnabled === 'boolean') {
+          cfg.guardShortcutEnabled = body.guardShortcutEnabled;
+          if (body.guardShortcutEnabled) void ensureGuardShortcut(cfg).catch(() => { /* 尽力而为 */ });
+        }
         // 关键：写回完整 publicSettings，绝不丢其他键（保证局内/局外同步）
         await fs.mkdir(dirname(SETTINGS_FILE), { recursive: true });
         await fs.writeFile(SETTINGS_FILE, JSON.stringify(publicSettings(cfg), null, 2), 'utf8');
