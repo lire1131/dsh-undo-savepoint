@@ -126,6 +126,7 @@
   "restore.preflightHint": "恢复后 DSH 可能无法启动——请先安装这些插件，或用 undo_safe_mode action \"on\" 仅带撤销系统启动。",
   "restore.note": "说明：{note}",
   "restore.skipped": "⚠️ 已跳过（活文件保持原样）：{note}",
+  "undo.targetGone": "回滚目标快照在拍下还原前快照时被自动清理（超出 keepAuto），本次未做任何改动。请重试，或用 undo_list 指定另一个快照。",
   "snap.created": "已创建手动快照 {id}（{n} 个文件，原因：{reason}）。目录：{dir}",
   "list.empty": "暂无快照。配置变化时会自动出现。",
   "diff.notFound": "未找到快照：{id}。请先运行 undo_list。",
