@@ -125,6 +125,7 @@
   "restore.preflightMissing": "⚠️ 跨机预检：本机无法解析但被引用的：{missing}",
   "restore.preflightHint": "恢复后 DSH 可能无法启动——请先安装这些插件，或用 undo_safe_mode action \"on\" 仅带撤销系统启动。",
   "restore.note": "说明：{note}",
+  "restore.skipped": "⚠️ 已跳过（活文件保持原样）：{note}",
   "snap.created": "已创建手动快照 {id}（{n} 个文件，原因：{reason}）。目录：{dir}",
   "list.empty": "暂无快照。配置变化时会自动出现。",
   "diff.notFound": "未找到快照：{id}。请先运行 undo_list。",
