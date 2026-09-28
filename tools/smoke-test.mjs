@@ -662,6 +662,25 @@ console.log('== W37. #41 triple guard: vault ingest + restore refusal + post-wri
   await rm(root37, { recursive: true, force: true });
 }
 
+console.log('== W38. #41 doctor vault contamination check ==');
+{
+  const core = await import('../lib/core.mjs');
+  const root38 = await mkdtemp(join(tmpdir(), 'dsh-undo-test38-'));
+  const home38 = join(root38, 'home'), profile38 = join(root38, 'profile');
+  const auto38 = join(root38, 'snaps', 'auto');
+  await mkdir(home38, { recursive: true }); await mkdir(profile38, { recursive: true });
+  const vault38 = join(auto38, 'env-vault');
+  await mkdir(vault38, { recursive: true });
+  const cfg38 = { manualDir: join(root38, 'snaps', 'manual'), autoDir: auto38, homeDir: home38, profileDir: profile38, sensitiveMode: 'redact' };
+  const hits38 = (r) => r.checks.filter((c) => c.code === 'pre-vault-contamination');
+  check(hits38(await core.runDoctor(cfg38)).length === 0, 'W38: 清洁 vault 不报污染（无 pre-vault-contamination 行）');
+  const dirtyName = 'deadbeefdeadbeefdeadbeefdeadbeefdeadbeef.env';
+  await writeFile(join(vault38, dirtyName), 'API_KEY=***REDACTED***\n');
+  const dirty38 = hits38(await core.runDoctor(cfg38));
+  check(dirty38.length === 1 && dirty38[0].level === 'warn' && JSON.stringify(dirty38[0]).includes(dirtyName), `W38: 污染 vault 条目报 warn 且点名条目（实得 ${JSON.stringify(dirty38)}）`);
+  await rm(root38, { recursive: true, force: true });
+}
+
 console.log('== 20b. keep mode: sensitive files stored in plaintext (v0.3.2) ==');
 const root13 = await mkdtemp(join(tmpdir(), 'dsh-undo-test13-'));
 const home13 = join(root13, 'home'), profile13 = join(root13, 'profile'), snap13 = join(root13, 'snaps');
