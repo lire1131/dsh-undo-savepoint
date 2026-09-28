@@ -548,9 +548,9 @@ check(snapEnv12.includes('export TOKEN="***REDACTED***"'), 'export + quotes pres
 check(snapEnv12.includes('# vision api'), 'comment line preserved');
 check(snapEnv12.includes('EMPTY='), 'empty value line preserved');
 const snapCred12 = await readFile(join(snap12, 'manual', m12dir, 'home-.credentials.yaml'), 'utf8');
-check(snapCred12.includes('apiKey: ***REDACTED***') && snapCred12.includes('secret: ***REDACTED***'), 'credentials.yaml values redacted, keys kept');
+check(snapCred12.includes('apiKey: "***REDACTED***"') && snapCred12.includes('secret: "***REDACTED***"'), 'credentials.yaml values redacted, keys kept');
 const snapSet12 = await readFile(join(snap12, 'manual', m12dir, 'home-settings.yaml'), 'utf8');
-check(snapSet12.includes('model: ***REDACTED***') && snapSet12.includes('apiKey: ***REDACTED***'), 'home settings.yaml values redacted in snapshot (keys kept)');
+check(snapSet12.includes('model: "***REDACTED***"') && snapSet12.includes('apiKey: "***REDACTED***"'), 'home settings.yaml values redacted in snapshot (keys kept)');
 check(!snapSet12.includes('sk-live-token12'), 'no real token in snapshot settings.yaml');
 check(!snapEnv12.includes('kfc-vw50'), 'no real value in snapshot .env');
 check(m12.redacted.includes('home-.env') && m12.redacted.includes('home-.credentials.yaml') && m12.redacted.includes('home-settings.yaml'), 'manifest redacted list recorded');
@@ -1934,15 +1934,50 @@ await cleanup(root30);
   ].join('\n');
   const y = core.redactYamlContent(yamlIn);
   const e = core.redactEnvContent(envIn);
-  check(!/sk-list-secret|another-secret/.test(y) && y.includes('- ***REDACTED***'), '#35: yaml list items replaced with placeholder');
-  check(!/nested-key-secret/.test(y) && /key: \*\*\*REDACTED\*\*\*/.test(y), '#35: nested key-value inside list replaced');
+  check(!/sk-list-secret|another-secret/.test(y) && y.includes('- "***REDACTED***"'), '#35: yaml list items replaced with placeholder');
+  check(!/nested-key-secret/.test(y) && /key: "\*\*\*REDACTED\*\*\*"/.test(y), '#35: nested key-value inside list replaced');
   check(!/line1-secret|line2-secret/.test(y), '#35: block scalar content lines replaced');
   check(!/b-secret|a-secret/.test(y), '#35: flow-style continuation lines replaced');
   check(!/unterminated-secret|continuation-secret/.test(e), '#35: env unterminated-quote multi-line value replaced');
   check(!/bare-continuation-secret/.test(e) && e.includes('***REDACTED***'), '#35: env bare continuation line replaced with placeholder');
   check(y.includes('# credentials') && y.split('\n').includes('') && e.includes('# comment') && e.split('\n').includes(''), '#35: comments and blank lines preserved');
   check(core.redactYamlContent(y) === y && core.redactEnvContent(e) === e, '#35: redaction is idempotent');
-  check(y.includes('apiKey: ***REDACTED***') && y.includes('quoted: ***REDACTED***') && e.includes('API_KEY=***REDACTED***') && e.includes('export TOKEN="***REDACTED***"'), '#35: plain key-value forms still redacted (regression)');
+  check(y.includes('apiKey: "***REDACTED***"') && y.includes('quoted: "***REDACTED***"') && e.includes('API_KEY=***REDACTED***') && e.includes('export TOKEN="***REDACTED***"'), '#35: plain key-value forms still redacted (regression)');
+}
+
+// ── W36：脱敏器构造折叠金样（#41 缺陷 1）────────────────────────────────────
+// 逐字节金样：四个夹具的期望输出由规划侧用 PyYAML safe_load 验证过合法性（旧版
+// 裸占位符 `***REDACTED***` 本身就是非法别名语法）并验证过二过不变，此处按字面量
+// 落成 strict equal 断言，第五条验四夹具整体幂等。
+{
+  const core = await import('../lib/core.mjs');
+  const R = '***REDACTED***';
+  const gc = [
+    {
+      name: 'block',
+      input: 'core:\n  theme: dark\n  order: |\n    first\n    second\n  apiKey: sk-abc\n',
+      expect: `core:\n  theme: "${R}"\n  order: "${R}"\n  apiKey: "${R}"\n`,
+    },
+    {
+      name: 'flow',
+      input: 'providers: [openai,\n  deepseek]\n',
+      expect: `providers: "${R}"\n`,
+    },
+    {
+      name: 'nested',
+      input: 'mcpServers:\n  - name: alpha\n    url: https://x\n  - beta\n',
+      expect: `mcpServers:\n  - name: "${R}"\n    url: "${R}"\n  - "${R}"\n`,
+    },
+    {
+      name: 'mixed',
+      input: '# top\nsettings:\n  model: x\n\n  keys:\n    - k1\n    - k2\n...',
+      expect: `# top\nsettings:\n  model: "${R}"\n\n  keys:\n    - "${R}"\n    - "${R}"\n...`,
+    },
+  ];
+  for (const c of gc) {
+    check(core.redactYamlContent(c.input) === c.expect, `W36: 金样 ${c.name} 逐字节相符（构造折叠输出合法 YAML）`);
+  }
+  check(gc.every((c) => core.redactYamlContent(core.redactYamlContent(c.input)) === c.expect), 'W36: 四个金样再脱敏一遍不变（幂等）');
 }
 
 // ── T1. #37 局外 WebUI 深色模式 + 主题 token 审计（v0.4.8）────────────────────
