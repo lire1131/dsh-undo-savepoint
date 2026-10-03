@@ -2286,5 +2286,71 @@ await rm(root, { recursive: true, force: true });
   await rm(r46, { recursive: true, force: true });
 }
 
+// ── W45（#43-3）：dedupeMount config 豁免 + 悬空 insert 清扫 ─────────────────
+{
+  const core = await import('../lib/core.mjs');
+  const r45 = await mkdtemp(join(tmpdir(), 'dsh-undo-i43-3-'));
+  const home45 = join(r45, 'home'), profile45 = join(r45, 'profile');
+  await mkdir(home45, { recursive: true }); await mkdir(profile45, { recursive: true });
+
+  // 场景一（#43 主诉）：home patch 带 config + bundle 挂载 → config 条目豁免不删
+  const cfgHomeMount = [
+    '- insert:',
+    '    - id: dsh-undo-savepoint',
+    '      name: dsh-undo-savepoint',
+    '      config:',
+    '        sensitiveMode: keep',
+  ].join('\n') + '\n';
+  await writeFile(join(home45, 'cordis.patch.yml'), cfgHomeMount);
+  await writeFile(join(profile45, 'cordis.patch.yml'), '# profile patch\n');
+  await writeFile(join(profile45, 'package.json'), JSON.stringify({ name: 'dsh-profile-web', dsh: { profile: { bundles: ['dsh-undo-savepoint'] } } }));
+  const cfg45a = core.buildConfig({ homeDir: home45, profileDir: profile45, manualDir: join(r45, 'm'), autoDir: join(r45, 'a'), profileName: 'web' });
+  const dupA = await core.dedupeMount(cfg45a);
+  const homeTextA = await readFile(join(home45, 'cordis.patch.yml'), 'utf8');
+  check(homeTextA.includes('sensitiveMode: keep') && homeTextA.includes('dsh-undo-savepoint'), 'W45: 带 config 的挂载条目不被去重删除（#43 主诉：2 秒被吞）');
+  check(dupA.kept === join(home45, 'cordis.patch.yml') && dupA.removed.includes(join(profile45, 'package.json')), 'W45: config 条目赢得保留位、bundle 面被撤（返回值明示）');
+  const pkgA = JSON.parse(await readFile(join(profile45, 'package.json'), 'utf8'));
+  check(!pkgA.dsh.profile.bundles.includes('dsh-undo-savepoint'), 'W45: bundle 面去重不受豁免影响（保留 config 条目、撤 bundle 挂载）');
+
+  // 场景二：不带 config 的 home patch + bundle → 整块删除且无悬空 insert
+  const home45b = join(r45, 'home2'), profile45b = join(r45, 'profile2');
+  await mkdir(join(home45b), { recursive: true }); await mkdir(profile45b, { recursive: true });
+  const twoEntries = [
+    '- insert:',
+    '    - id: other-plugin',
+    '      name: other-plugin',
+    '- insert:',
+    '    - id: dsh-undo-savepoint',
+    '      name: dsh-undo-savepoint',
+  ].join('\n') + '\n';
+  await writeFile(join(home45b, 'cordis.patch.yml'), twoEntries);
+  await writeFile(join(profile45b, 'cordis.patch.yml'), '# p\n');
+  await writeFile(join(profile45b, 'package.json'), JSON.stringify({ dsh: { profile: { bundles: ['dsh-undo-savepoint'] } } }));
+  const cfg45b = core.buildConfig({ homeDir: home45b, profileDir: profile45b, manualDir: join(r45, 'm2'), autoDir: join(r45, 'a2'), profileName: 'web' });
+  await core.dedupeMount(cfg45b);
+  const homeTextB = await readFile(join(home45b, 'cordis.patch.yml'), 'utf8');
+  check(!homeTextB.includes('dsh-undo-savepoint') && homeTextB.includes('other-plugin'), 'W45: 无 config 条目照常去重，其他条目原样保留');
+  check(!/-\s*insert:\s*(\n|$)(?!\s)/.test(homeTextB) || !/^-$/.test(homeTextB.split('\n')[0]), 'W45: 无悬空 - insert: 残留（整块删除）');
+
+  // 场景三：历史悬空 insert 清扫（0.4.9 removeMountBlock 的残留形态）
+  const home45c = join(r45, 'home3'), profile45c = join(r45, 'profile3');
+  await mkdir(home45c, { recursive: true }); await mkdir(profile45c, { recursive: true });
+  const danglingText = [
+    '- insert:',
+    '- insert:',
+    '    - id: dsh-undo-savepoint',
+    '      name: dsh-undo-savepoint',
+  ].join('\n') + '\n';
+  await writeFile(join(home45c, 'cordis.patch.yml'), danglingText);
+  await writeFile(join(profile45c, 'cordis.patch.yml'), '# p\n');
+  await writeFile(join(profile45c, 'package.json'), JSON.stringify({ dsh: { profile: { bundles: ['dsh-undo-savepoint'] } } }));
+  const cfg45c = core.buildConfig({ homeDir: home45c, profileDir: profile45c, manualDir: join(r45, 'm3'), autoDir: join(r45, 'a3'), profileName: 'web' });
+  await core.dedupeMount(cfg45c);
+  const homeTextC = await readFile(join(home45c, 'cordis.patch.yml'), 'utf8');
+  check(!/^\s*-\s*insert:\s*$/m.test(homeTextC), 'W45: 历史悬空 - insert: 空条目被清扫（#43 「残留更糟」细节）');
+
+  await rm(r45, { recursive: true, force: true });
+}
+
 console.log(`\n== RESULT: ${pass} passed, ${fail} failed ==`);
 process.exit(fail > 0 ? 1 : 0);
