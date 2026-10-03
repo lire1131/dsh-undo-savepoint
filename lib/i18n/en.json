@@ -125,6 +125,7 @@
   "restore.preflightMissing": "⚠️ Cross-machine preflight: referenced but NOT resolvable on this machine: {missing}",
   "restore.preflightHint": "DSH may fail to start after restore — install them first, or use undo_safe_mode action \"on\" to boot with only the undo system.",
   "restore.note": "Note: {note}",
+  "restore.skipped": "Skipped: {note} (live file left intact)",
   "snap.created": "Manual snapshot {id} created ({n} file(s), reason: {reason}). Store: {dir}",
   "list.empty": "No snapshots yet. They appear automatically when config files change.",
   "diff.notFound": "Snapshot not found: {id}. Run undo_list first.",

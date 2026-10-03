@@ -547,9 +547,9 @@ check(snapEnv12.includes('export TOKEN="***REDACTED***"'), 'export + quotes pres
 check(snapEnv12.includes('# vision api'), 'comment line preserved');
 check(snapEnv12.includes('EMPTY='), 'empty value line preserved');
 const snapCred12 = await readFile(join(snap12, 'manual', m12dir, 'home-.credentials.yaml'), 'utf8');
-check(snapCred12.includes('apiKey: ***REDACTED***') && snapCred12.includes('secret: ***REDACTED***'), 'credentials.yaml values redacted, keys kept');
+check(snapCred12.includes('apiKey: "***REDACTED***"') && snapCred12.includes('secret: "***REDACTED***"'), 'credentials.yaml values redacted, keys kept');
 const snapSet12 = await readFile(join(snap12, 'manual', m12dir, 'home-settings.yaml'), 'utf8');
-check(snapSet12.includes('model: ***REDACTED***') && snapSet12.includes('apiKey: ***REDACTED***'), 'home settings.yaml values redacted in snapshot (keys kept)');
+check(snapSet12.includes('model: "***REDACTED***"') && snapSet12.includes('apiKey: "***REDACTED***"'), 'home settings.yaml values redacted in snapshot (keys kept)');
 check(!snapSet12.includes('sk-live-token12'), 'no real token in snapshot settings.yaml');
 check(!snapEnv12.includes('kfc-vw50'), 'no real value in snapshot .env');
 check(m12.redacted.includes('home-.env') && m12.redacted.includes('home-.credentials.yaml') && m12.redacted.includes('home-settings.yaml'), 'manifest redacted list recorded');
@@ -583,6 +583,82 @@ console.log('   ', out.split('\n').find((l) => l.includes('Note:')) ?? '(no note
 check(out.includes('redacted placeholder'), 'report notes the placeholder restore');
 const restoredEnv12 = await readFile(join(home12, '.env'), 'utf8');
 check(restoredEnv12.includes('***REDACTED***') && !restoredEnv12.includes('changed-again'), 'cross-machine restore yields redacted placeholder');
+// W37 守卫二（#41）：同一时刻的 yaml 敏感文件不能再降级写回占位符版（旧行为会把非法
+// YAML 写进 settings.yaml）。本步的 vault 丢失由 W37 段落的场景 B/C 精确复现（这里
+// undo 起手拍的 pre-restore 快照会按当前内容重建 vault，命中即真实值，不构成丢失）。
+check((await readFile(join(home12, 'settings.yaml'), 'utf8')).includes('sk-live-token12'), 'W37 守卫二：yaml 敏感文件在本步仍拿到真实值（未被占位符版覆盖）');
+console.log('== W37. #41 triple guard: vault ingest + restore refusal + post-write verify ==');
+{
+  const core = await import('../lib/core.mjs');
+  const root37 = await mkdtemp(join(tmpdir(), 'dsh-undo-test37-'));
+  const home37 = join(root37, 'home'), profile37 = join(root37, 'profile'), snap37 = join(root37, 'snaps');
+  await mkdir(home37, { recursive: true }); await mkdir(profile37, { recursive: true });
+  await writeFile(join(profile37, 'cordis.patch.yml'), '# patch\n[]\n');
+  const vault37 = join(snap37, 'auto', 'env-vault');
+  const manual37 = join(snap37, 'manual');
+  const tools37 = new Map();
+  const ctx37 = {
+    tools: { register: (t) => { tools37.set(t.name, t); return () => { }; } },
+    systemPrompt: { section: () => () => { } }, get: () => undefined,
+    effect: (fn) => { const d = fn(); return d ?? (() => { }); }, logger: { info: () => { }, warn: () => { } },
+  };
+  apply(ctx37, { manualDir: manual37, autoDir: join(snap37, 'auto'), homeDir: home37, profileDir: profile37, watch: false, pluginDirs: [] });
+  await new Promise((r) => setTimeout(r, 300));
+  const run37 = async (name, args) => (await tools37.get(name).execute(args, {}));
+  const newest37 = async () => (await readdir(manual37)).filter((d) => d !== '.booting').sort().pop();
+  const manifest37 = async (d) => JSON.parse(await readFile(join(manual37, d, 'manifest.json'), 'utf8'));
+  // 目录名同秒时字典序不可靠（pre-restore 也会进 manual store），按 reason 精确定位。
+  const dirByReason37 = async (reason) => {
+    for (const d of (await readdir(manual37)).filter((x) => x !== '.booting')) {
+      const m = await manifest37(d).catch(() => null);
+      if (m && m.reason === reason) return d;
+    }
+    return null;
+  };
+
+  // 场景 A（守卫一·入库）：活 settings.yaml 已被先前脱敏文本污染 → 拒绝把污染文本
+  // 入库为「真值」，快照仍记脱敏副本，manifest 记 redactedPreexisting。
+  await writeFile(join(home37, 'settings.yaml'), 'model: "***REDACTED***"\napiKey: "***REDACTED***"\n');
+  await writeFile(join(home37, '.env'), 'API_KEY=real-value-37\n');
+  await run37('undo_snapshot', { reason: 'polluted-live' });
+  const m37a = await manifest37(await newest37());
+  const vault37a = await readdir(vault37).catch(() => []);
+  check(!m37a.envVaultRefs['home-settings.yaml'] && Array.isArray(m37a.redactedPreexisting) && m37a.redactedPreexisting.includes('home-settings.yaml'), 'W37 守卫一：活文件含占位符时拒绝入 vault，manifest 记 redactedPreexisting');
+  check(vault37a.length === 1 && !!m37a.envVaultRefs['home-.env'], 'W37 守卫一：只有未污染的文件入库（vault 仅 .env 一条）');
+
+  // 场景 B（守卫二·降级）：vault 整体丢失 → yaml 拒写、活文件保持还原前内容；
+  // .env 不拦，占位符降级行为不变。
+  const liveYaml37 = 'model: live-model-37\napiKey: live-key-37\n';
+  await writeFile(join(home37, 'settings.yaml'), liveYaml37);
+  await writeFile(join(home37, '.env'), 'API_KEY=second-real-37\n');
+  await run37('undo_snapshot', { reason: 'before-vault-loss' });
+  const snapB37 = await newest37();
+  await rm(vault37, { recursive: true, force: true });
+  const preRestore37 = 'model: changed-after-37\n';
+  await writeFile(join(home37, 'settings.yaml'), preRestore37);
+  // .env 也要改内容：undo 起手会按当前内容重建 vault，若内容与快照同 sha 会命中真值，
+  // 那样根本走不到降级分支（.env 的占位符降级是文档化行为，必须单独钉住）。
+  await writeFile(join(home37, '.env'), 'API_KEY=changed-before-b-37\n');
+  const outB37 = await run37('undo_restore', { mode: 'id', snapshot_id: snapB37 });
+  const yamlB37 = await readFile(join(home37, 'settings.yaml'), 'utf8');
+  check(yamlB37 === preRestore37 && !yamlB37.includes('REDACTED'), 'W37 守卫二：vault 缺失时 yaml 拒写，活文件保持还原前内容（未变占位符版）');
+  check(outB37.includes('file skipped') && outB37.includes('Skipped'), 'W37 守卫二：跳过原因在工具输出里明示（file skipped）');
+  check((await readFile(join(home37, '.env'), 'utf8')).includes('***REDACTED***'), 'W37 守卫二：.env 不拦，占位符降级行为不变');
+
+  // 场景 C（守卫二·污染条目）：vault 条目本身是历史版本固化的占位符文本 → 同样拒写。
+  // vault 条目按内容 sha 定位（不依赖 manifest 反查，避免受同秒目录名排序影响）。
+  const cleanC37 = 'model: real-before-pollution-37\n';
+  await writeFile(join(home37, 'settings.yaml'), cleanC37);
+  await run37('undo_snapshot', { reason: 'then-pollute-vault' });
+  const snapC37 = (await dirByReason37('then-pollute-vault')) ?? (await newest37());
+  await writeFile(join(vault37, `${core.sha1Hex(Buffer.from(cleanC37))}.env`), 'model: "***REDACTED***"\n');
+  const preC37 = 'model: live-before-c-37\n';
+  await writeFile(join(home37, 'settings.yaml'), preC37);
+  const outC37 = await run37('undo_restore', { mode: 'id', snapshot_id: snapC37 });
+  check((await readFile(join(home37, 'settings.yaml'), 'utf8')) === preC37 && outC37.includes('file skipped'), 'W37 守卫二：vault 条目被污染时同样拒写并明示');
+  await rm(root37, { recursive: true, force: true });
+}
+
 await rm(root12, { recursive: true, force: true });
 
 console.log('== 20b. keep mode: sensitive files stored in plaintext (v0.3.2) ==');
@@ -1710,15 +1786,15 @@ await cleanup(root30);
   ].join('\n');
   const y = core.redactYamlContent(yamlIn);
   const e = core.redactEnvContent(envIn);
-  check(!/sk-list-secret|another-secret/.test(y) && y.includes('- ***REDACTED***'), '#35: yaml list items replaced with placeholder');
-  check(!/nested-key-secret/.test(y) && /key: \*\*\*REDACTED\*\*\*/.test(y), '#35: nested key-value inside list replaced');
+  check(!/sk-list-secret|another-secret/.test(y) && y.includes('- "***REDACTED***"'), '#35: yaml list items replaced with placeholder');
+  check(!/nested-key-secret/.test(y) && /key: "\*\*\*REDACTED\*\*\*"/.test(y), '#35: nested key-value inside list replaced');
   check(!/line1-secret|line2-secret/.test(y), '#35: block scalar content lines replaced');
   check(!/b-secret|a-secret/.test(y), '#35: flow-style continuation lines replaced');
   check(!/unterminated-secret|continuation-secret/.test(e), '#35: env unterminated-quote multi-line value replaced');
   check(!/bare-continuation-secret/.test(e) && e.includes('***REDACTED***'), '#35: env bare continuation line replaced with placeholder');
   check(y.includes('# credentials') && y.split('\n').includes('') && e.includes('# comment') && e.split('\n').includes(''), '#35: comments and blank lines preserved');
   check(core.redactYamlContent(y) === y && core.redactEnvContent(e) === e, '#35: redaction is idempotent');
-  check(y.includes('apiKey: ***REDACTED***') && y.includes('quoted: ***REDACTED***') && e.includes('API_KEY=***REDACTED***') && e.includes('export TOKEN="***REDACTED***"'), '#35: plain key-value forms still redacted (regression)');
+  check(y.includes('apiKey: "***REDACTED***"') && y.includes('quoted: "***REDACTED***"') && e.includes('API_KEY=***REDACTED***') && e.includes('export TOKEN="***REDACTED***"'), '#35: plain key-value forms still redacted (regression)');
 }
 
 // ── T1. #37 局外 WebUI 深色模式 + 主题 token 审计（v0.4.8）────────────────────
@@ -2022,6 +2098,7 @@ await rm(root, { recursive: true, force: true });
 
   await rm(wroot, { recursive: true, force: true });
 }
+
 
 console.log(`\n== RESULT: ${pass} passed, ${fail} failed ==`);
 process.exit(fail > 0 ? 1 : 0);
