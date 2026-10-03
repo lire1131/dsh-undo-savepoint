@@ -554,7 +554,7 @@ check(!snapSet12.includes('sk-live-token12'), 'no real token in snapshot setting
 check(!snapEnv12.includes('kfc-vw50'), 'no real value in snapshot .env');
 check(m12.redacted.includes('home-.env') && m12.redacted.includes('home-.credentials.yaml') && m12.redacted.includes('home-settings.yaml'), 'manifest redacted list recorded');
 check(m12.envVaultRefs['home-.env'] && m12.envVaultRefs['home-.credentials.yaml'] && m12.envVaultRefs['home-settings.yaml'], 'manifest envVaultRefs recorded');
-check((await readdir(vaultDir12)).length === 3, 'vault holds real values (3 files)');
+check((await readdir(vaultDir12)).length === 4, 'vault holds real values (4 files: 3 home sensitive + profile-cordis.patch.yml since #39)');
 check((await readFile(join(vaultDir12, m12.envVaultRefs['home-.env'] + '.env'), 'utf8')).includes('kfc-vw50'), 'vault file contains the real .env');
 // 2) 本机完整回滚：改 .env → undo → 真实值还原
 await writeFile(join(home12, '.env'), '# vision api\nAPI_KEY=changed-value\nexport TOKEN="other"\nEMPTY=\n');
@@ -624,7 +624,7 @@ console.log('== W37. #41 triple guard: vault ingest + restore refusal + post-wri
   const m37a = await manifest37(await newest37());
   const vault37a = await readdir(vault37).catch(() => []);
   check(!m37a.envVaultRefs['home-settings.yaml'] && Array.isArray(m37a.redactedPreexisting) && m37a.redactedPreexisting.includes('home-settings.yaml'), 'W37 守卫一：活文件含占位符时拒绝入 vault，manifest 记 redactedPreexisting');
-  check(vault37a.length === 1 && !!m37a.envVaultRefs['home-.env'], 'W37 守卫一：只有未污染的文件入库（vault 仅 .env 一条）');
+  check(vault37a.length === 2 && !!m37a.envVaultRefs['home-.env'] && !!m37a.envVaultRefs['profile-cordis.patch.yml'] && !m37a.envVaultRefs['home-settings.yaml'], 'W37 守卫一：只有未污染的文件入库（.env 与 patch.yml 入库，被污染的 settings.yaml 不入）');
 
   // 场景 B（守卫二·降级）：vault 整体丢失 → yaml 拒写、活文件保持还原前内容；
   // .env 不拦，占位符降级行为不变。
@@ -2138,6 +2138,67 @@ await rm(root, { recursive: true, force: true });
   check(b5.ok === true, 'W35: 字符串形式 patch 行为不变（0.4.9 既有形态回归）');
 
   await rm(broot, { recursive: true, force: true });
+}
+
+// ── #39：cordis.patch.yml / cordis.yml 三文件脱敏 + 存量止血工具 ──────────────
+// 0.4.9 抓取清单里有 home/profile 两级 cordis.patch.yml 与 profile/cordis.yml，
+// 但 SENSITIVE_DESTS 没有它们：MCP Authorization 头原样落快照。金样取自 issue
+// 正文（home 补丁层 insert dsh-mcp-client + config.headers.Authorization Bearer）。
+{
+  const core = await import('../lib/core.mjs');
+  const r39 = await mkdtemp(join(tmpdir(), 'dsh-undo-i39-'));
+  const home39 = join(r39, 'home'), profile39 = join(r39, 'profile');
+  await mkdir(home39, { recursive: true }); await mkdir(profile39, { recursive: true });
+  const gold39 = [
+    '- insert:',
+    '    - id: gety-mcp',
+    "      name: '@deepseek-ai/dsh-mcp-client'",
+    '      config:',
+    '        transport: streamable-http',
+    '        url: "http://127.0.0.1:31226/mcp"',
+    '        headers:',
+    '          Authorization: "Bearer sk-live-gold-token-39"',
+  ].join('\n') + '\n';
+  await writeFile(join(home39, 'cordis.patch.yml'), gold39);
+  await writeFile(join(profile39, 'cordis.patch.yml'), gold39.replace('gety-mcp', 'gety-mcp-p'));
+  await writeFile(join(profile39, 'cordis.yml'), 'api_key: sk-live-cordis-yml-39\nendpoint: http://127.0.0.1:9\n');
+  await writeFile(join(profile39, 'package.json'), '{"name":"dsh-profile-web","dsh":{"profile":{"bundles":[]}}}\n');
+  const cfg39 = core.buildConfig({
+    homeDir: home39, profileDir: profile39,
+    manualDir: join(r39, 'manual'), autoDir: join(r39, 'auto'),
+    profileName: 'web', sensitiveMode: 'redact',
+  });
+  const snap39 = await core.createSnapshot(cfg39, 'manual', 'i39-golden');
+  snap39._dir = join(cfg39.manualDir, snap39.id);
+  const m39 = JSON.parse(await readFile(join(snap39._dir, 'manifest.json'), 'utf8'));
+  const readSnap39 = async (n) => readFile(join(snap39._dir, n), 'utf8');
+  const hp = await readSnap39('home-cordis.patch.yml');
+  check(!hp.includes('sk-live-gold-token-39') && hp.includes('Authorization: "***REDACTED***"') && hp.includes('- insert:') && hp.includes('headers:'), '#39: home-cordis.patch.yml 的 Authorization 头脱敏，列表/嵌套结构保留');
+  const pp = await readSnap39('profile-cordis.patch.yml');
+  check(!pp.includes('sk-live-gold-token-39'), '#39: profile-cordis.patch.yml 同样脱敏');
+  const cy = await readSnap39('profile-cordis.yml');
+  check(!cy.includes('sk-live-cordis-yml-39') && cy.includes('api_key: "***REDACTED***"'), '#39: profile-cordis.yml 走 YAML 脱敏器（.yml 路由，键名保留）');
+  check(!!m39.envVaultRefs['home-cordis.patch.yml'] && !!m39.envVaultRefs['profile-cordis.patch.yml'] && !!m39.envVaultRefs['profile-cordis.yml'], '#39: 三文件真值全部入 vault（还原可用）');
+  const real39 = await core.readVault(cfg39, m39.envVaultRefs['home-cordis.patch.yml']);
+  check(real39 && real39.toString('utf8').includes('sk-live-gold-token-39'), '#39: vault 里是真值（本机还原路径完整）');
+
+  // 存量止血：手工造一个 0.4.9 时代带明文的旧快照，redact-existing.mjs 端到端修掉
+  const old39 = join(r39, 'undo-old', 'auto', '20260917-000000-leak');
+  await mkdir(old39, { recursive: true });
+  await writeFile(join(old39, 'manifest.json'), JSON.stringify({ id: '20260917-000000-leak' }));
+  await writeFile(join(old39, 'home-cordis.patch.yml'), gold39);
+  const { execFile } = await import('node:child_process');
+  const runTool = (args) => new Promise((res) => execFile(process.execPath, [join(repoRoot, 'tools', 'redact-existing.mjs'), ...args], { env: { ...process.env, DSH_HOME: r39, DSH_UNDO_ROOT: join(r39, 'undo-old') } }, (e, so, se) => res({ code: e ? e.code : 0, so, se })));
+  const dry = await runTool(['--dry-run']);
+  check(dry.code === 1 && dry.so.includes('to fix: 1'), '#39: redact-existing --dry-run 报告 1 处明文且退出码 1');
+  const wet = await runTool([]);
+  check(wet.code === 0 && wet.so.includes('redacted: 1') && wet.so.includes('轮换'), '#39: redact-existing 修复成功并给出令牌轮换提示');
+  const fixed39 = await readFile(join(old39, 'home-cordis.patch.yml'), 'utf8');
+  check(!fixed39.includes('sk-live-gold-token-39') && fixed39.includes('***REDACTED***'), '#39: 旧快照明文已就地重脱敏');
+  const again = await runTool([]);
+  check(again.code === 0 && again.so.includes('redacted: 0'), '#39: 幂等——二跑零修复');
+
+  await rm(r39, { recursive: true, force: true });
 }
 
 console.log(`\n== RESULT: ${pass} passed, ${fail} failed ==`);
