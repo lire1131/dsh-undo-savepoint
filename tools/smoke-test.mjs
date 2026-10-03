@@ -2201,5 +2201,90 @@ await rm(root, { recursive: true, force: true });
   await rm(r39, { recursive: true, force: true });
 }
 
+// ── W46/W47（#43/#44）：profileName 四层链 + bundleAnchors 安装锚点 + safe-mode 拒动 ──
+{
+  const core = await import('../lib/core.mjs');
+  const r46 = await mkdtemp(join(tmpdir(), 'dsh-undo-i4344-'));
+  // ── W46：四层探测链（argv > profileContext > env > web）──
+  const savedEnvP = process.env.DSH_PROFILE, savedEnvD = process.env.DSH_PROFILE_DIR;
+  core.setHostProfileContext(() => ({ name: 'desktop', installAnchor: join(r46, 'install', 'package.json') }));
+  check(core.detectProfileName(['node', 'dsh', '--profile', 'flagged']) === 'flagged', 'W46: argv --profile X 压过宿主 profileContext');
+  check(core.detectProfileName(['node', 'dsh', '--profile=eqform']) === 'eqform', 'W46: --profile=X 等号形态');
+  check(core.detectProfileName(['node', 'dsh']) === 'desktop', 'W46: 无旗标时宿主 profileContext 生效（#43 桌面主场景）');
+  core.setHostProfileContext(() => null);
+  process.env.DSH_PROFILE = 'from-env';
+  check(core.detectProfileName(['node', 'dsh']) === 'from-env', 'W46: env DSH_PROFILE 兜底（#44 模型 shell 子进程场景）');
+  delete process.env.DSH_PROFILE;
+  process.env.DSH_PROFILE_DIR = join(r46, 'profiles', 'dirnamed');
+  check(core.detectProfileName(['node', 'dsh']) === 'dirnamed', 'W46: DSH_PROFILE_DIR 取 basename');
+  delete process.env.DSH_PROFILE_DIR;
+  check(core.detectProfileName(['node', 'dsh']) === 'web', 'W46: 全空落回 web 默认');
+  core.setHostProfileContext(() => ({ name: '' }));
+  process.env.DSH_PROFILE = 'fallback-env';
+  check(core.detectProfileName(['node', 'dsh']) === 'fallback-env', 'W46: profileContext.name 为空串时跳过该层');
+  delete process.env.DSH_PROFILE;
+  core.setHostProfileContext(null);
+
+  // ── W46：settings.json profileName 档（buildConfig 层序第二位）──
+  const home46 = join(r46, 'home');
+  await mkdir(join(home46, 'profiles', 'from-settings'), { recursive: true });
+  // core.mjs 的 DSH_HOME/SETTINGS_FILE 是加载期常量——用子进程验证 settings 档。
+  // 注意 -e 默认按 CJS 跑，顶层 await 要 --input-type=module。
+  const { execFile } = await import('node:child_process');
+  await mkdir(join(home46, 'undo'), { recursive: true });
+  await writeFile(join(home46, 'undo', 'settings.json'), JSON.stringify({ profileName: 'from-settings' }));
+  // smoke 全局设了 DSH_UNDO_SETTINGS（第 40 行），子进程要验证的是「按 DSH_HOME
+  // 解析的 settings 路径」，必须从继承环境里摘掉它，否则读到的是 smoke 自己的设置。
+  const env46 = { ...process.env };
+  delete env46.DSH_UNDO_SETTINGS;
+  const probe2 = await new Promise((res) => execFile(process.execPath, ['--input-type=module', '-e', `
+    process.env.DSH_HOME = ${JSON.stringify(home46)};
+    const core = await import(${JSON.stringify(join(repoRoot, 'lib', 'core.mjs'))});
+    console.log(core.buildConfig({}).profileName);
+  `], { env: env46 }, (e, so, se) => res({ code: e ? e.code : 0, so, se })));
+  check(probe2.code === 0 && probe2.so.trim() === 'from-settings', 'W46: settings.json profileName 档生效（#43 坐实的缺失档）');
+  if (savedEnvP !== undefined) process.env.DSH_PROFILE = savedEnvP;
+
+  // ── W47：安装锚点（官方序：安装目录先于 profile）──
+  const install46 = join(r46, 'install');
+  const webAppDir = join(install46, 'node_modules', '@deepseek-ai', 'dsh-web-app');
+  await mkdir(webAppDir, { recursive: true });
+  await writeFile(join(webAppDir, 'package.json'), JSON.stringify({ name: '@deepseek-ai/dsh-web-app', dsh: { bundle: { patch: ['./cordis.patch.yml'] } } }));
+  await writeFile(join(webAppDir, 'cordis.patch.yml'), '# core bundle patch\n');
+  const profile46 = join(r46, 'profiles', 'desktop');
+  await mkdir(profile46, { recursive: true });
+  await writeFile(join(profile46, 'package.json'), '{"name":"dsh-profile-desktop"}\n');
+  const cfg46 = { profileName: 'desktop', homeDir: join(r46, 'home'), profileDir: profile46 };
+  core.setHostProfileContext(() => ({ name: 'desktop', installAnchor: join(install46, 'package.json') }));
+  const coreR = await core.bundleCheck(cfg46, '@deepseek-ai/dsh-web-app', profile46);
+  check(coreR.ok === true && coreR.via === 'host', 'W47: 核心 bundle 经宿主安装锚点解析（#44 四锚点矩阵的主断言）');
+  const localDir = join(profile46, 'node_modules', 'my-plugin-x');
+  await mkdir(localDir, { recursive: true });
+  await writeFile(join(localDir, 'package.json'), JSON.stringify({ name: 'my-plugin-x', dsh: { bundle: { patch: './p.yml' } } }));
+  await writeFile(join(localDir, 'p.yml'), 'x\n');
+  const localR = await core.bundleCheck(cfg46, 'my-plugin-x', profile46);
+  check(localR.ok === true && localR.via === 'profile', 'W47: profile 本地 bundle 仍从 profile 锚点解析（via=profile）');
+  core.setHostProfileContext(null);
+  const noHostR = await core.bundleCheck(cfg46, '@deepseek-ai/dsh-web-app', profile46);
+  check(noHostR.ok === false, 'W47: 无宿主上下文时核心 bundle 回到不可解析（对照组，证明锚点确实来自 profileContext）');
+
+  // ── W47：safe-mode 拒动 desktop（两种命中形态 + 回归）──
+  const store46 = { manualDir: join(r46, 'manual'), autoDir: join(r46, 'auto') };
+  core.setHostProfileContext(() => ({ name: 'desktop', installAnchor: join(install46, 'package.json') }));
+  const deskR = await core.safeModeSet({ ...cfg46, ...store46 }, true);
+  check(deskR.ok === false && deskR.code === 'desktop-refused' && deskR.message.includes('desktop'), 'W47: 宿主桌面上下文在场时拒动 safe-mode');
+  core.setHostProfileContext(null);
+  const namedR = await core.safeModeSet({ ...cfg46, ...store46 }, true);
+  check(namedR.ok === false && namedR.code === 'desktop-refused', 'W47: profile 名为 desktop 时同样拒动（CLI 侧定向操作）');
+  const web46 = join(r46, 'profiles', 'web');
+  await mkdir(web46, { recursive: true });
+  const normalR = await core.safeModeSet({ profileName: 'web', homeDir: join(r46, 'home'), profileDir: web46, ...store46 }, true);
+  check(normalR.ok === true, 'W47: 非桌面 profile 的 safe-mode 照常工作（回归）');
+  const offR = await core.safeModeSet({ profileName: 'desktop', homeDir: join(r46, 'home'), profileDir: profile46, ...store46 }, false);
+  check(offR.ok === true, 'W47: 关闭动作不受 desktop 拒动影响（退出安全模式的门永远开着）');
+
+  await rm(r46, { recursive: true, force: true });
+}
+
 console.log(`\n== RESULT: ${pass} passed, ${fail} failed ==`);
 process.exit(fail > 0 ? 1 : 0);

@@ -126,6 +126,7 @@
   "restore.preflightHint": "DSH may fail to start after restore — install them first, or use undo_safe_mode action \"on\" to boot with only the undo system.",
   "restore.note": "Note: {note}",
   "restore.skipped": "Skipped: {note} (live file left intact)",
+  "safe.desktopRefused": "desktop profile ({profile}) is not handled by this plugin safe-mode: desktop bundle sets contain host-managed entries and touching them can break startup. Use the DSH desktop fatal-recovery dialog (the three buttons on crash, pick sanitize/reset bundles) instead, or wait for the 0.5.0 desktop install chain. Snapshots and undo are unaffected.",
   "snap.created": "Manual snapshot {id} created ({n} file(s), reason: {reason}). Store: {dir}",
   "list.empty": "No snapshots yet. They appear automatically when config files change.",
   "diff.notFound": "Snapshot not found: {id}. Run undo_list first.",

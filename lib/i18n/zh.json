@@ -126,6 +126,7 @@
   "restore.preflightHint": "恢复后 DSH 可能无法启动——请先安装这些插件，或用 undo_safe_mode action \"on\" 仅带撤销系统启动。",
   "restore.note": "说明：{note}",
   "restore.skipped": "跳过：{note}（活文件保持原样）",
+  "safe.desktopRefused": "desktop profile（{profile}）不走本插件的安全模式：桌面端的 bundle 组成含宿主管理件，误动会破坏启动。请用 DSH 桌面版自带的恢复弹窗（崩溃时的三按钮，选 sanitize/重置 bundles），或等 0.5.0 的桌面安装链。快照与撤销不受影响，可正常使用。",
   "snap.created": "已创建手动快照 {id}（{n} 个文件，原因：{reason}）。目录：{dir}",
   "list.empty": "暂无快照。配置变化时会自动出现。",
   "diff.notFound": "未找到快照：{id}。请先运行 undo_list。",
