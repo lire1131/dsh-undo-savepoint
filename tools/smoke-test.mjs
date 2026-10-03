@@ -1914,5 +1914,114 @@ console.log('== T3. undo_doctor fix=true: 预检修复的工具面（v0.4.8）==
 }
 
 await rm(root, { recursive: true, force: true });
+// ── W39 步骤三 P6b：瀑布契约模拟与注册层钩子直连（#42）──────────────────────
+// #42 暴露的第三盲区是「注册层钩子零覆盖」：既有 P6 用例只直连工厂函数，从未验证
+// 瀑布链上的返回值传递、链错误传播与 msgId 序列化。本段用忠实模拟 cordis 派发语义
+// 的夹具补齐这十条。
+{
+  const core = await import('../lib/core.mjs');
+  const wroot = await mkdtemp(join(tmpdir(), 'dsh-undo-wf-'));
+  const allow = { kind: 'allow' };
+  const deny = { kind: 'deny' };
+  const target = join(wroot, 'wf.txt');
+  await writeFile(target, 'wf-before');
+  const mkcfg = (name) => ({ autoDir: join(wroot, name), manualDir: join(wroot, 'manual'), workspaceDirs: [wroot], fileToolWhitelist: ['write', 'edit'], keepMessageOps: 200, profileName: 'hookwf' });
+  // 模拟 cordis EventWaterfall.waterfall 契约（逐字转录自 @deepseek-ai/cordis
+  // 4.0.2/4.0.4，两版逐字节一致；dispatch 的 shift 语义保留：shift 掉 carrier 与
+  // 事件名后监听器收到 (exec, next)，链尾是 fallback）。
+  const makeWaterfallHarness = () => {
+    const listeners = {};
+    return {
+      on(name, cb) { (listeners[name] ??= []).push(cb); },
+      waterfall(...args) {
+        const thisArg = (typeof args[0] === 'object' || typeof args[0] === 'function') ? args.shift() : null;
+        const name = args.shift();
+        const cbs = (listeners[name] ?? []).slice();
+        const inner = args.pop();
+        const next = () => { return (cbs.shift() ?? inner)(...args); };
+        args.push(next);
+        return next();
+      },
+    };
+  };
+  const mkExec = (agent, tool = 'write', p = target) => ({ callId: 'w39', name: tool, arguments: { path: p }, agent, signal: null });
+  const runWf = async (cfg, exec, tail = allow, extra = []) => {
+    const hw = makeWaterfallHarness();
+    const warns = [];
+    let tailCalls = 0;
+    hw.on('tools/pre-execute', core.makePreExecuteListener({ cfg, logger: { warn: (m) => warns.push(String(m)) } }));
+    for (const cb of extra) hw.on('tools/pre-execute', cb);
+    let got = null;
+    let err = null;
+    try { got = await hw.waterfall('tools/pre-execute', exec, () => { tailCalls++; return tail; }); }
+    catch (e) { err = e; }
+    const ops = await core.listMessageOps(cfg).catch(() => []);
+    return { got, err, warns, tailCalls, ops, files: ops.reduce((n, b) => n + b.files, 0) };
+  };
+
+  // 一、透传主断言：白名单工具加 scope 内文件，钩子返回值必须就是链尾结论
+  const w1 = await runWf(mkcfg('wf1'), mkExec({ id: 'sess-1' }));
+  check(w1.got === allow && w1.got?.kind === 'allow', 'P6b: 钩子把链尾结论原样传回（gate.kind 可读，不再 undefined）');
+
+  // 二、msgId 序列化：agent 带循环引用，落盘的 messageId 必须是 agent.id 字符串
+  const cyc = { id: 'sess-1' };
+  cyc.self = cyc;
+  const w2 = await runWf(mkcfg('wf2'), mkExec(cyc), deny);
+  check(w2.files === 1 && w2.ops[0].messageId === 'sess-1', 'P6b: 循环引用 agent 也能落盘，messageId 取 agent.id 字符串');
+
+  // 三、msgId 兜底：agent 缺失或空对象时退 null，落盘不报错
+  const w3a = await runWf(mkcfg('wf3a'), mkExec(undefined));
+  const w3b = await runWf(mkcfg('wf3b'), mkExec({}));
+  check(w3a.files === 1 && w3a.ops[0].messageId === null && w3b.files === 1 && w3b.ops[0].messageId === null, 'P6b: agent 无 id 时 messageId 退 null 且照常落盘');
+
+  // 四、记账旁路：message-ops 目录被文件占住，链尾结论仍要原样返回
+  const cfg4 = mkcfg('wf4');
+  await mkdir(cfg4.autoDir, { recursive: true });
+  await writeFile(join(cfg4.autoDir, 'message-ops'), 'x');
+  const w4 = await runWf(cfg4, mkExec({ id: 'sess-1' }), deny);
+  check(w4.got === deny && w4.ops.length === 0, 'P6b: 记账失败不改判链尾结论，工具执行不被阻断');
+
+  // 五、大于 256KB 分支：放行、返回值原样、不记账、blob 仓不落盘
+  const cfg5 = mkcfg('wf5');
+  const bigPath = join(wroot, 'wf-big.bin');
+  await writeFile(bigPath, Buffer.alloc(300 * 1024, 66));
+  const w5 = await runWf(cfg5, mkExec({ id: 'sess-1' }, 'write', bigPath), allow);
+  const blobs5 = await readdir(join(cfg5.autoDir, 'blobs')).catch(() => []);
+  check(w5.got === allow && w5.tailCalls === 1 && w5.files === 0 && blobs5.length === 0, 'P6b: 大于 256KB 放行且不记账，blob 仓为空');
+
+  // 六、链下游故障原样传播：钩子不得吞掉下游监听器的异常
+  const boom = () => { throw new Error('w39 downstream boom'); };
+  const w6 = await runWf(mkcfg('wf6'), mkExec({ id: 'sess-1' }), allow, [boom]);
+  check(w6.err instanceof Error && /downstream boom/.test(String(w6.err.message)), 'P6b: 链下游抛错原样传播，不被钩子吞掉');
+
+  // 七、链下游故障不重试：链尾计数为零，证明没有二次执行
+  check(w6.tailCalls === 0 && w6.files === 0, 'P6b: 链下游抛错时不重跑链（链尾计数为零）');
+
+  // 八、提前分支（白名单外工具）遇下游故障同样传播且不重跑
+  const w8 = await runWf(mkcfg('wf8'), mkExec({ id: 'sess-1' }, 'read'), allow, [boom]);
+  check(w8.err instanceof Error && w8.tailCalls === 0, 'P6b: 白名单外工具遇下游故障同样传播且不重跑链');
+
+  // 九、链前我方逻辑炸：降级放行，链恰好跑一次（blobs 被文件占住，writeBlob 必失败）
+  const cfg9 = mkcfg('wf9');
+  await mkdir(cfg9.autoDir, { recursive: true });
+  await writeFile(join(cfg9.autoDir, 'blobs'), 'x');
+  const w9 = await runWf(cfg9, mkExec({ id: 'sess-1' }), deny);
+  check(w9.got === deny && w9.tailCalls === 1, 'P6b: 链前我方逻辑炸时降级放行，链恰好跑一次');
+
+  // 十、60 秒窗口分组回归：同一钩子实例连续两次调用复用同一批次（真实 DSH 里监听器
+  // 只在注册时构造一次，批次状态挂在闭包里，所以这里必须复用同一个钩子实例）。
+  const cfg10 = mkcfg('wf10');
+  const hw10 = makeWaterfallHarness();
+  hw10.on('tools/pre-execute', core.makePreExecuteListener({ cfg: cfg10, logger: { warn: () => { /* noop */ } } }));
+  const runSame = () => hw10.waterfall('tools/pre-execute', mkExec({ id: 'sess-1' }), () => allow);
+  await runSame();
+  await runSame();
+  const ops10 = await core.listMessageOps(cfg10).catch(() => []);
+  const files10 = ops10.reduce((n, b) => n + b.files, 0);
+  check(ops10.length === 1 && files10 === 2, 'P6b: 同一 agent.id 在 60 秒窗口内复用同一消息批次');
+
+  await rm(wroot, { recursive: true, force: true });
+}
+
 console.log(`\n== RESULT: ${pass} passed, ${fail} failed ==`);
 process.exit(fail > 0 ? 1 : 0);
