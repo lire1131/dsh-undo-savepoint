@@ -2100,5 +2100,45 @@ await rm(root, { recursive: true, force: true });
 }
 
 
+// ── W35：bundleCheck 认数组形式 dsh.bundle.patch（issue #40）──────────────────
+// DSH 0.1.7-rc.1 起 dsh.bundle.patch 从字符串扩展为字符串或文件路径数组，
+// @deepseek-ai/dsh-web-app 是数组形式第一个官方使用者：只认字符串会把合法 bundle
+// 判成 no dsh.bundle.patch，触发 doctor 误报与安全模式误删。
+{
+  const core = await import('../lib/core.mjs');
+  const broot = await mkdtemp(join(tmpdir(), 'dsh-undo-bundle-'));
+  await writeFile(join(broot, 'package.json'), '{}');
+  const mkBundle = async (name, patchJson, files) => {
+    const dir = join(broot, 'node_modules', name);
+    await mkdir(dir, { recursive: true });
+    await writeFile(join(dir, 'package.json'), JSON.stringify({ name, dsh: { bundle: { patch: patchJson } } }));
+    for (const f of files) await writeFile(join(dir, f), 'x: 1\n');
+    return dir;
+  };
+  const bcfg = { autoDir: join(broot, 'auto'), settingsFile: join(broot, 'settings.json'), profileName: 'test' };
+
+  const arrDir = await mkBundle('arr-bundle', ['p1.yml', 'p2.yml'], ['p1.yml', 'p2.yml']);
+  const b1 = await core.bundleCheck(bcfg, 'arr-bundle', broot);
+  check(b1.ok === true && b1.dir === arrDir, 'W35: 数组形式 patch 且文件齐全时 ok，dir 指向包目录');
+
+  await rm(join(arrDir, 'p2.yml'));
+  const b2 = await core.bundleCheck(bcfg, 'arr-bundle', broot);
+  check(b2.ok === false && String(b2.reason).includes(join(arrDir, 'p2.yml')), 'W35: 数组内某个文件缺失时按缺失绝对路径报错');
+
+  await mkBundle('empty-bundle', [], []);
+  const b3 = await core.bundleCheck(bcfg, 'empty-bundle', broot);
+  check(b3.ok === false && /no dsh\.bundle\.patch/.test(String(b3.reason)), 'W35: 空数组视为未声明（no dsh.bundle.patch）');
+
+  await mkBundle('bad-bundle', ['p1.yml', 5], ['p1.yml']);
+  const b4 = await core.bundleCheck(bcfg, 'bad-bundle', broot);
+  check(b4.ok === false && /非字符串项/.test(String(b4.reason)), 'W35: 数组含非字符串项时明确报错');
+
+  await mkBundle('str-bundle', 'p1.yml', ['p1.yml']);
+  const b5 = await core.bundleCheck(bcfg, 'str-bundle', broot);
+  check(b5.ok === true, 'W35: 字符串形式 patch 行为不变（0.4.9 既有形态回归）');
+
+  await rm(broot, { recursive: true, force: true });
+}
+
 console.log(`\n== RESULT: ${pass} passed, ${fail} failed ==`);
 process.exit(fail > 0 ? 1 : 0);

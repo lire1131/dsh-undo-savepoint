@@ -316,9 +316,15 @@ function Test-UndoBundleResolvable([string]$Name) {
         $pkgFile = Join-Path $cand 'package.json'
         if (-not (Test-Path -LiteralPath $pkgFile)) { continue }
         try { $pkg = Get-Content -LiteralPath $pkgFile -Raw -Encoding UTF8 | ConvertFrom-Json } catch { continue }
-        $patch = $pkg.dsh.bundle.patch
-        if (-not $patch) { return @{ ok = $false; reason = "no dsh.bundle.patch ($Name)" } }
-        if (-not (Test-Path -LiteralPath (Join-Path $cand $patch))) { return @{ ok = $false; reason = "patch 文件缺失: $patch" } }
+        # dsh.bundle.patch 既可是字符串，也可是文件路径数组（DSH 0.1.7 起扩展，与
+        # lib/core.mjs 的归一化语义保持一致）；数组形式要逐项校验，缺一个即算坏项。
+        $rawPatch = $pkg.dsh.bundle.patch
+        $declared = if ($rawPatch -is [string]) { ,@($rawPatch) } elseif ($rawPatch -is [array]) { $rawPatch } else { $null }
+        if (-not $declared -or $declared.Count -eq 0) { return @{ ok = $false; reason = "no dsh.bundle.patch ($Name)" } }
+        foreach ($f in $declared) {
+            if ($f -isnot [string] -or -not $f) { return @{ ok = $false; reason = "dsh.bundle.patch 含非字符串项: $f ($Name)" } }
+            if (-not (Test-Path -LiteralPath (Join-Path $cand $f))) { return @{ ok = $false; reason = "patch 文件缺失: $f" } }
+        }
         return @{ ok = $true }
     }
     return @{ ok = $false; reason = "cannot resolve $Name" }
