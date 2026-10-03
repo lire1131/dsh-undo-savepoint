@@ -56,6 +56,14 @@ v0.4.0 起核心抽取为纯 Node 零依赖模块（`lib/core.mjs` / `lib/zip.mj
 
 > CI 为三平台矩阵（`windows/ubuntu/macos × node[20,22]`）。ZIP 导出 / 导入由纯 Node 零依赖 `lib/zip.mjs` 实现（deflate / 存储、CRC32、UTF-8），不引入运行时依赖，与 PowerShell 互操作已双向验证。
 
+### DSH 版本与桌面端（0.4.10）
+
+- **支持的 DSH 版本**：engines 声明 `>=0.1.5-rc.2 || >=0.2.0-rc.1`（OR 串，不设上限）。已在 0.1.5-rc.2 与 0.2.0-rc.2 全 peer 树上跑过全套门禁。
+- **DSH 桌面版（0.2.0）**：快照 / 撤销 / doctor 已适配（profile 识别、安装锚点、host-managed 报告）。注意两点：
+  - `undo_safe_mode` 对 desktop profile **拒绝启用**——桌面端的 bundle 组成含宿主管理件，误动会破坏启动。崩溃恢复请用 DSH 桌面版自带的恢复弹窗（三按钮）。关闭安全模式不受限，快照与撤销不受影响。
+  - 桌面端安装链（快捷方式 / 卸载路径）随 0.5.0 完善中；当前在桌面端用 `--profile desktop` 或 settings.json `profileName` 档定向操作即可。
+- **存量快照脱敏检查（#39）**：0.4.10 之前创建的快照可能含 cordis.patch.yml 明文令牌。跑 `node tools/redact-existing.mjs --dry-run` 检查，去掉 `--dry-run` 就地修复；曾导出过的快照视为已泄露，请轮换令牌。
+
 > ![icon](https://cdn.jsdelivr.net/gh/lire1131/dsh-undo-savepoint@master/docs/app-icon.png)
 >
 > Logo / 图标：生成提示词见 `docs/logo-prompt.md`；WebUI favicon 用内置 `tools/webui/logo.svg`。自定义图标：透明 PNG 存为 `tools/webui/logo.png`，运行 `node tools/make-ico.mjs tools/webui/logo.png tools/webui/logo.ico` 生成 `.ico`，下次创建快捷方式时自动启用（回退顺序 `logo.ico` → `logo.png` → 系统默认）。

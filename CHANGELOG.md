@@ -2,6 +2,46 @@
 
 dsh-undo-savepoint 的重要变更。日期为本地时间（UTC+8)。English version: [CHANGELOG.en.md](CHANGELOG.en.md)
 
+## [0.4.10] - 2026-10-03
+
+紧急修复版。0.2.0 适配与七项修复，目标是新用户在 DSH 0.2.0-rc.2（npm latest）上开包即用。
+
+### 安全
+
+- **home/profile 两级 cordis.patch.yml 与 profile/cordis.yml 纳入脱敏清单**（#39）。此前这
+  三个文件被抓进快照但不在脱敏清单里，MCP Authorization 头（config.headers）等敏感值原样
+  落盘。现在与 settings.yaml 同等待遇，快照内存占位值，真值只写本机 vault。同步修复 .yml
+  文件误走 env 脱敏器的路由缺陷。**存量快照请跑 `node tools/redact-existing.mjs --dry-run`
+  检查**（新工具，就地重脱敏旧明文副本，--dry-run 只报告）；曾导出过快照的令牌请视为已
+  泄露并轮换。
+
+### 修复
+
+- **write/edit 工具在链式钩子下完全不可用**（#42，v0.4.0 起所有版本）。pre-execute 钩子
+  吞掉瀑布返回值，工具层读 gate.kind 直接 TypeError；消息级追踪因 msgId 取值错误从未成功
+  记账。钩子本体移入 core.mjs，结论原样透传、next 只调一次、msgId 取 agent.id、路径归一化。
+- **桌面版 profile 被认成 web，快照丢全部 profile 配置**（#43/#44）。detectProfileName
+  升级四层链（argv > 宿主 profileContext > shell 环境变量 > web），settings.json 新增
+  profileName 档（显式配置 > settings > 自动探测）。
+- **桌面版 doctor 恒报 cannot resolve、safe-mode 会误删核心 bundle**（#43/#44）。
+  bundleAnchors 补安装锚点（对齐官方解析序，安装目录先于 profile 目录），核心 bundle 经
+  安装锚点解析时报 host-managed（ok 级）。safe-mode 拒动 desktop profile（指路官方恢复
+  弹窗；关闭动作不受限，快照与撤销不受影响）。
+- **带 config 的挂载条目被去重误删**（#43）。config 是用户显意配置，现在它赢过去重
+  （撤的是 bundle 挂载）；removeMountBlock 的悬空 `- insert:` 残留一并根修。
+- **vault 入库与还原三重守卫**（#41）。活文件已含占位符时拒绝入库为真值；YAML 敏感文件
+  还原候选含占位符时拒写（活文件保持原样）；写盘后字节级回读复核。跳过项在结果里明示。
+- **脱敏器构造折叠根修**（#41）。输出保证合法 YAML（带引号占位符、块标量/流式集合整体
+  折叠、裸行丢弃防泄露），幂等。
+- **bundleCheck 认数组形式 dsh.bundle.patch**（#40）。@deepseek-ai/dsh-web-app 是数组形式
+  第一个官方使用者，此前被误判 no dsh.bundle.patch。
+
+### 变更
+
+- **engines.dsh 声明 0.2.0-rc.1+**（OR 串追加，不设上限）。0.2.0 桌面端外壳层变化（Electron/
+  NSIS/单根 ~/.dsh 两壳互通），插件 API 层零变化；v4 会话持久层与 v3 帧级兼容。桌面端为
+  真机验收项，快照、撤销、doctor 已修，安装链完善（快捷方式、卸载）随 0.5.0。
+
 ## [0.4.9] - 2026-09-16
 
 ### 安全

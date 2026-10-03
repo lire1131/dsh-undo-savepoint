@@ -45,6 +45,14 @@ Dreading DSH crashes? Afraid a tiny edit becomes a disaster? One-click rollback 
 | File/dir selection dialog | PowerShell native | osascript | zenity→kdialog (fallback: manual path) |
 | CI regression | windows-latest | macos-latest | ubuntu-latest |
 
+### DSH versions and the desktop app (0.4.10)
+
+- **Supported DSH versions**: engines declares `>=0.1.5-rc.2 || >=0.2.0-rc.1` (OR string, no upper bound). Full gate suites have been run on the 0.1.5-rc.2 and 0.2.0-rc.2 peer trees.
+- **DSH desktop (0.2.0)**: snapshots / undo / doctor are adapted (profile detection, installation anchor, host-managed reporting). Two notes:
+  - `undo_safe_mode` **refuses to enable** for desktop profiles — desktop bundle sets contain host-managed entries and touching them can break startup. Use the DSH desktop fatal-recovery dialog (three buttons) for crash recovery. Turning safe-mode off is always allowed; snapshots and undo are unaffected.
+  - The desktop install chain (shortcuts / uninstall paths) is being polished for 0.5.0; for now target the desktop profile via `--profile desktop` or the settings.json `profileName` key.
+- **Existing-snapshot redaction check (#39)**: snapshots created before 0.4.10 may contain plaintext tokens from cordis.patch.yml. Run `node tools/redact-existing.mjs --dry-run` to check, drop `--dry-run` to fix in place; treat previously exported snapshots as leaked and rotate tokens.
+
 ## Crash rescue quick reference (pick by scenario)
 
 | Scenario | Action |

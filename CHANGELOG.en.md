@@ -2,6 +2,53 @@
 
 Notable changes to dsh-undo-savepoint. Dates are in local time (UTC+8). 中文版:[CHANGELOG.md](CHANGELOG.md)
 
+## [0.4.10] - 2026-10-03
+
+Emergency fix release. 0.2.0 compatibility and seven fixes, with the goal that fresh installs work out of the box on DSH 0.2.0-rc.2 (npm latest).
+
+### Security
+
+- **home/profile cordis.patch.yml and profile/cordis.yml join the redaction list** (#39). These
+  three files were captured into snapshots but never redacted: MCP Authorization headers
+  (config.headers) landed on disk in clear text. They now get the same treatment as settings.yaml, with placeholders in snapshots and real values only in the local vault. Also fixes .yml files being routed
+  to the env redactor. **Run `node tools/redact-existing.mjs --dry-run` to check existing
+  snapshots** (new tool; re-redacts old plaintext copies in place, --dry-run reports only); treat
+  tokens in previously exported snapshots as leaked and rotate them.
+
+### Fixed
+
+- **write/edit tools completely broken under chained hooks** (#42, every release since v0.4.0).
+  The pre-execute hook swallowed the waterfall return value, so the tool layer crashed reading
+  gate.kind; message-level tracking never recorded due to a wrong msgId. The hook now lives in
+  core.mjs: results passed through unchanged, next() called exactly once, msgId from agent.id,
+  path normalization unified.
+- **Desktop profile detected as web, snapshots lost all profile config** (#43/#44).
+  detectProfileName upgraded to a four-layer chain (argv > host profileContext > shell env > web);
+  settings.json gains a profileName key (explicit config > settings > auto-detection).
+- **Desktop doctor always reported cannot resolve; safe-mode could prune core bundles** (#43/#44).
+  bundleAnchors gained the installation anchor (matching the official resolution order:
+  installation before profile directory); core bundles resolving from the installation are
+  reported as host-managed (ok level). safe-mode refuses to touch desktop profiles (points to the
+  official recovery dialog; turning safe-mode off is always allowed; snapshots and undo unaffected).
+- **Mount entries with user config were deleted by dedupe** (#43). Config is explicit user intent
+  and now wins deduplication (the bundle face is withdrawn instead); the dangling `- insert:`
+  leftover from removeMountBlock is fixed at the root.
+- **Triple guard for vault ingest and restore** (#41). Live files already containing placeholders
+  are refused as vault truths; YAML sensitive files with placeholder candidates are skipped on
+  restore (live file kept intact); post-write byte verification. Skipped files are reported.
+- **Redactor construct-folding rewrite** (#41). Output is guaranteed valid YAML (quoted
+  placeholders, block scalars/flow collections folded whole, unrecognized lines dropped), idempotent.
+- **bundleCheck accepts array-form dsh.bundle.patch** (#40). @deepseek-ai/dsh-web-app is the first
+  official user of the array form; it was previously misreported as no dsh.bundle.patch.
+
+### Changed
+
+- **engines.dsh now declares 0.2.0-rc.1+** (OR string appended, no upper bound). 0.2.0 changes the
+  desktop shell layer (Electron/NSIS/single-root ~/.dsh with two-shell interflow); the plugin API
+  layer is unchanged, and the v4 session persistence is frame-level compatible with v3. Desktop is
+  pending real-machine validation, with snapshots/undo/doctor fixed and install-chain polish (shortcuts/
+  uninstall) shipping with 0.5.0.
+
 ## [0.4.9] - 2026-09-16
 
 ### Security
