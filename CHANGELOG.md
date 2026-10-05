@@ -2,6 +2,12 @@
 
 dsh-undo-savepoint 的重要变更。日期为本地时间（UTC+8)。English version: [CHANGELOG.en.md](CHANGELOG.en.md)
 
+## [0.5.0-canary.5] - 2026-10-05
+
+### 新增
+
+- **补全桌面端官方恢复弹窗的部分恢复场景**。bundles 已恢复但补丁内容缺失时，doctor 会按最新备份列出缺失条目，并支持条目级一键搬回，不覆盖桌面端后续写入。搬回前先落修前快照，并给当前补丁留一份 `cordis.patch.yml.dsh-undo-bak`。已执行的搬回不自动撤销，可用修前快照或该备份退回。
+
 ## [0.5.0-canary.4] - 2026-10-04
 
 ### 新增

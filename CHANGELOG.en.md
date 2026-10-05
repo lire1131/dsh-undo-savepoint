@@ -2,6 +2,12 @@
 
 Notable changes to dsh-undo-savepoint. Dates are in local time (UTC+8). 中文版:[CHANGELOG.md](CHANGELOG.md)
 
+## [0.5.0-canary.5] - 2026-10-05
+
+### Added
+
+- **The partial restore case of the desktop recovery dialog is now covered.** When bundles were restored but patch content went missing, doctor lists the missing entries against the newest backup and can merge them back entry by entry without overwriting later desktop writes. A pre-fix snapshot is taken and the current patch is copied to `cordis.patch.yml.dsh-undo-bak` first. An executed merge-back is not rolled back automatically, so use the pre-fix snapshot or that backup to undo it.
+
 ## [0.5.0-canary.4] - 2026-10-04
 
 ### Added

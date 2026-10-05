@@ -2994,6 +2994,212 @@ await rm(root, { recursive: true, force: true });
       `W43: sanitize 恢复把补丁换成最新备份、插件写回 bundles 且复检干净（applied=${fixSan43.applied.filter((a) => a.code === 'pre-sanitize-trace').length}，复检 ${recheckSan43.length} 条）`);
   }
 
+  // W50: 部分 sanitize（第二检出面）——bundles 已恢复、补丁内容却缺条目。
+  // W43-4 的三要素要求补丁与 bundles 都没有本插件，官方恢复弹窗的另一处落点不满足：
+  // 插件在、配置静默消失。这里按条目名级比对最新备份与当前补丁，钉检出四条件、分级、
+  // 条目级搬回与幂等。
+  {
+    const { utimes } = await import('node:fs/promises');
+    const health50 = await import('../lib/health.mjs');
+    const { t: t50 } = await import('../lib/i18n.mjs');
+    const NL = String.fromCharCode(10);
+    // 夹具文本一律用行数组拼：本文件里写字面量反斜杠 n 转义，经工具链往返会被吃成真换行。
+    const L = (...rows) => rows.join(NL) + NL;
+    const w50root = join(rootW, 'w50');
+    const BAK50 = 'cordis.patch.yml.bak-1790834455722';
+    // 备份侧：2 个顶层键 + 2 条 insert 条目。insert 下故意放注释行与「config 更深缩进 +
+    // 第二条同缩进兄弟条目」，这两种形态正是 splitItems 会判错、W50 自建缩进树的存在理由。
+    const BAK50_TEXT = L(
+      '- id: ui-settings-general',
+      '  name: "@deepseek-ai/dsh-client-ui-settings-general"',
+      '  config:',
+      '    welcomeNoticeVersion: 2026-08-13.1',
+      '- id: agent-default-model',
+      '  name: "@deepseek-ai/dsh-agent-default-model"',
+      '  config:',
+      '    provider: deepseek-official',
+      '    model: deepseek-flash',
+      '- insert:',
+      '    # 法律检索 MCP',
+      '    - id: mcp-chinese-law',
+      "      name: '@deepseek-ai/dsh-mcp-client'",
+      '      config:',
+      '        serverName: chinese_law',
+      '    - id: mcp-chinese-law-ansvar',
+      "      name: '@deepseek-ai/dsh-mcp-client'",
+      '      config:',
+      '        serverName: chinese_law_ansvar',
+      '- id: ui-chat',
+      '  name: "@deepseek-ai/dsh-client-ui-chat"',
+      '  config:',
+      '    transcriptView: standard',
+    );
+    // 当前侧：含官方 sanitize 之后桌面端新写的 agent-preset-registry（整文件覆盖会二次伤害），
+    // 挂载块收在末尾。
+    const CUR50_BODY = L(
+      '- id: ui-chat',
+      '  name: "@deepseek-ai/dsh-client-ui-chat"',
+      '  config:',
+      '    transcriptView: standard',
+      '- id: agent-preset-registry',
+      '  name: "@deepseek-ai/dsh-agent-preset-registry"',
+      '  config:',
+      '    default: standard',
+    );
+    const TAIL50 = L('', '# dsh-undo-savepoint mount (managed)', '- insert:', '    - id: dsh-undo-savepoint');
+    const BAK50_CFGONLY = L(
+      '- id: ui-settings-general',
+      '  name: "@deepseek-ai/dsh-client-ui-settings-general"',
+      '- id: agent-default-model',
+      '  name: "@deepseek-ai/dsh-agent-default-model"',
+      '- id: ui-chat',
+      '  name: "@deepseek-ai/dsh-client-ui-chat"',
+    );
+    const mk50 = async (tag, {
+      backup = BAK50_TEXT, cur = BAK50_TEXT + CUR50_BODY,
+      bundles = ['@deepseek-ai/dsh-base', 'dsh-undo-savepoint'], ageBak = 0, patchOlder = false,
+    } = {}) => {
+      const h = join(w50root, `home-${tag}`);
+      const d = join(h, 'profiles', 'desktop');   // 末级名必须 desktop，桌面判定按目录末级名（E83）
+      await mkdir(d, { recursive: true });
+      // 官方动作序列必然是「先备份后重建」：写文件顺序即 mtime 顺序（先 bak 后 patch）。
+      if (backup !== null) await writeFile(join(d, BAK50), backup);
+      await writeFile(join(d, 'cordis.patch.yml'), cur);
+      await writeFile(join(d, 'package.json'),
+        `{"name":"desktop-profile","dsh":{"profile":{"bundles":${JSON.stringify(bundles)}}}}${NL}`);
+      const now = Math.floor(Date.now() / 1000);
+      if (backup !== null && ageBak) {
+        await utimes(join(d, BAK50), now + ageBak, now + ageBak);      // 正数 = 备份更新（倒挂）
+      } else if (backup !== null && patchOlder) {
+        await utimes(join(d, BAK50), now - 20, now - 20);
+        await utimes(join(d, 'cordis.patch.yml'), now - 10, now - 10);
+      }
+      return { home: h, dir: d, cfg: { ...cfgW, profileName: 'desktop', homeDir: h, profileDir: d } };
+    };
+    const codes50 = (report) => report.checks.filter((c) => c.code === 'pre-partial-sanitize');
+
+    // (1) 正例：备份四条齐全、当前补丁缺这四条 ⇒ warn 且 fixable，缺失清单逐名列出。
+    const f50 = await mk50('full', { cur: CUR50_BODY + TAIL50, patchOlder: true });
+    const hit50 = codes50(await core.runDoctor(f50.cfg));
+    check(hit50.length === 1 && hit50[0].level === 'warn' && hit50[0].fixable === true,
+      `W50: 补丁内容缺失命中 warn 且 fixable（命中 ${hit50.length} 条${hit50[0] ? '，level=' + hit50[0].level : ''}）`);
+    const names50 = 'mcp-chinese-law, mcp-chinese-law-ansvar, agent-default-model, ui-settings-general';
+    check(hit50.length === 1
+      && hit50[0].detail === t50('doctor.partialSanitize', { backup: BAK50, names: names50 })
+      && hit50[0].fix === t50('doctor.partialSanitizeFix', {})
+      && hit50[0].detail.includes(BAK50)
+      && ['ui-settings-general', 'agent-default-model', 'mcp-chinese-law', 'mcp-chinese-law-ansvar']
+        .every((n) => hit50[0].detail.includes(n)),
+      'W50: 缺失清单逐名列出（四段全在场），详情与修复帮助都走 i18n 键');
+    // i18n 双语：三条键的必备信息在两份词典里都在（zh 三句为题面原文逐字）。
+    check(t50('doctor.partialSanitize', { backup: 'B', names: 'N' }, 'zh').includes('若这是你自己删的')
+      && t50('doctor.partialSanitizeFix', {}, 'zh').includes('这不是对那次选择的自动回退')
+      && t50('doctor.partialSanitizeInfo', {}, 'zh').includes('低置信提示'),
+      'W50: i18n 三条 zh 键含题面要求的免责句、非自动回退句与低置信提示');
+    check(t50('doctor.partialSanitize', { backup: 'B', names: 'N' }, 'en').includes('If you deleted these yourself')
+      && t50('doctor.partialSanitizeFix', {}, 'en').includes('not an automatic rollback')
+      && t50('doctor.partialSanitizeInfo', {}, 'en').includes('low-confidence'),
+      'W50: i18n 三条 en 键信息量对等');
+
+    // (2) fix：条目级搬回。当前补丁已有的条目逐字不动，只追加缺失的四条。
+    const before50 = await readFile(join(f50.dir, 'cordis.patch.yml'), 'utf8');
+    const fix50 = await core.runDoctorFix(f50.cfg);
+    const after50 = await readFile(join(f50.dir, 'cordis.patch.yml'), 'utf8');
+    const bak50 = await readFile(join(f50.dir, 'cordis.patch.yml.dsh-undo-bak'), 'utf8');
+    check(bak50 === before50, 'W50: .dsh-undo-bak 内容为恢复前原文（逐字节）');
+    check(after50.includes('- id: ui-settings-general' + NL + '  name: "@deepseek-ai/dsh-client-ui-settings-general"')
+      && after50.includes('- id: agent-default-model' + NL + '  name: "@deepseek-ai/dsh-agent-default-model"'),
+      'W50: 两个缺失顶层键的完整文本块回到当前补丁');
+    check(after50.includes('    - id: mcp-chinese-law' + NL + "      name: '@deepseek-ai/dsh-mcp-client'")
+      && after50.includes('    - id: mcp-chinese-law-ansvar' + NL + "      name: '@deepseek-ai/dsh-mcp-client'"),
+      'W50: 两条缺失 insert 条目连同内部 config 缩进回到当前补丁');
+    check(after50.indexOf('- id: ui-settings-general' + NL) < after50.indexOf('- id: agent-default-model' + NL)
+      && after50.indexOf('- id: mcp-chinese-law' + NL) < after50.indexOf('- id: mcp-chinese-law-ansvar' + NL),
+      'W50: 搬回条目保持备份内的原相对顺序（顶层键与 insert 各自成序）');
+    check(after50.includes('- id: agent-preset-registry' + NL + '  name: "@deepseek-ai/dsh-agent-preset-registry"')
+      && after50.includes('- id: ui-chat' + NL + '  name: "@deepseek-ai/dsh-client-ui-chat"'),
+      'W50: 当前补丁原有条目（含当前独有键）逐字不动');
+    check(after50.indexOf('dsh-undo-savepoint mount') > after50.indexOf('- id: agent-preset-registry'),
+      'W50: 新条目插在挂载块之前，挂载块仍在末尾');
+    check(fix50.applied.some((a) => a.code === 'pre-partial-sanitize' && a.ok === true
+      && /moved 4 missing entries/.test(a.action)),
+      `W50: 记账写明搬回 4 条（${fix50.applied.find((a) => a.code === 'pre-partial-sanitize')?.action ?? '无'})`);
+    check(fix50.snapshotId !== null && codes50(fix50.report).length === 0,
+      'W50: 修前快照存在（doctor-fix-before）且复检不再命中');
+    check(codes50(await core.runDoctor(f50.cfg)).length === 0 && core.findDanglingInserts(after50).length === 0,
+      'W50: 恢复后复检干净且无悬空 insert 键');
+    const fix50b = await core.runDoctorFix(f50.cfg);
+    check(!fix50b.applied.some((a) => a.code === 'pre-partial-sanitize')
+      && (await readFile(join(f50.dir, 'cordis.patch.yml'), 'utf8')) === after50,
+      'W50: 连续两次 fix，第二次为 no-op（差集已空不再搬，幂等）');
+
+    // (3) 负例：同目录没有 bak，无从比对。
+    const f50NoBak = await mk50('nobak', { backup: null });
+    check(codes50(await core.runDoctor(f50NoBak.cfg)).length === 0, 'W50: 无备份不报');
+
+    // (4) 负例：差集为空（当前补丁为备份超集，用户已手工加回来）。
+    const f50Super = await mk50('superset', { cur: BAK50_TEXT + CUR50_BODY + TAIL50, patchOlder: true });
+    check(codes50(await core.runDoctor(f50Super.cfg)).length === 0, 'W50: 当前补丁是备份超集（差集为空）不报');
+
+    // (5) 负例：bak mtime 晚于当前补丁（时间倒挂，用户自己拖出来的备份形态）。
+    const f50Inv = await mk50('inverted', { ageBak: 600 });
+    check(codes50(await core.runDoctor(f50Inv.cfg)).length === 0,
+      'W50: 备份 mtime 晚于当前补丁（倒挂）不报');
+
+    // (6) 分级：只有顶层键差异、无 insert 差异 ⇒ info 且不带 fixable。
+    const f50CfgOnly = await mk50('cfgonly', { backup: BAK50_CFGONLY, cur: CUR50_BODY + TAIL50, patchOlder: true });
+    const hit50Cfg = codes50(await core.runDoctor(f50CfgOnly.cfg));
+    check(hit50Cfg.length === 1 && hit50Cfg[0].level === 'info' && hit50Cfg[0].fixable === undefined,
+      `W50: 仅顶层键差异降为 info 且无 fixable（实得 ${hit50Cfg.length} 条${hit50Cfg[0] ? '，level=' + hit50Cfg[0].level : ''}）`);
+    check(hit50Cfg[0]?.detail.includes('agent-default-model') && !hit50Cfg[0]?.detail.includes('mcp-chinese-law'),
+      'W50: info 只列顶层键、不列 insert 条目');
+
+    // (7) 负例：同键名不同值（用户 sanitize 后自己重配过，是合法状态）。
+    const cur50Valued = (BAK50_TEXT + CUR50_BODY)
+      .replace('welcomeNoticeVersion: 2026-08-13.1', 'welcomeNoticeVersion: 2099-01-01.1') + TAIL50;
+    const f50Same = await mk50('samekey', { cur: cur50Valued, patchOlder: true });
+    check(codes50(await core.runDoctor(f50Same.cfg)).length === 0, 'W50: 同键名不同值不报');
+
+    // (8) mtime 相同（同秒，官方动作序列的正常态）视为不倒挂，照常判。
+    const f50SameSec = await mk50('samesec', { cur: CUR50_BODY + TAIL50 });
+    const now50 = Math.floor(Date.now() / 1000);
+    await utimes(join(f50SameSec.dir, BAK50), now50 - 10, now50 - 10);
+    await utimes(join(f50SameSec.dir, 'cordis.patch.yml'), now50 - 10, now50 - 10);
+    const hit50SameSec = codes50(await core.runDoctor(f50SameSec.cfg));
+    check(hit50SameSec.length === 1 && hit50SameSec[0].level === 'warn',
+      'W50: 备份与当前补丁 mtime 相同（同秒）照常判');
+
+    // (9) 多份 bak 时取字典序最新（13 位毫秒串，字典序即时序）参与比对。
+    const f50Multi = await mk50('multi', { cur: CUR50_BODY + TAIL50 });
+    const older50 = 'cordis.patch.yml.bak-1790834455721';
+    await writeFile(join(f50Multi.dir, older50), BAK50_TEXT);
+    await utimes(join(f50Multi.dir, BAK50), now50 - 20, now50 - 20);
+    await utimes(join(f50Multi.dir, older50), now50 - 30, now50 - 30);
+    await utimes(join(f50Multi.dir, 'cordis.patch.yml'), now50 - 10, now50 - 10);
+    const hit50Multi = codes50(await core.runDoctor(f50Multi.cfg));
+    check(hit50Multi.length === 1 && hit50Multi[0].detail.includes(BAK50)
+      && !hit50Multi[0].detail.includes('1790834455721'),
+      'W50: 多份备份时取字典序最新的那份参与比对');
+
+    // (10) 纯函数：条目名级提取分两档、缩进树搬回、差集空时原文逐字返回。
+    const ids50 = health50.collectPatchEntryIds(BAK50_TEXT);
+    check(JSON.stringify(ids50.topKeys) === JSON.stringify(['ui-settings-general', 'agent-default-model', 'ui-chat'])
+      && JSON.stringify(ids50.insertIds) === JSON.stringify(['mcp-chinese-law', 'mcp-chinese-law-ansvar']),
+      `W50: 条目名提取分顶层键与 insert 两档且不串档（顶层 ${ids50.topKeys.length} 项、insert ${ids50.insertIds.length} 项）`);
+    const cur50Pure = L('- id: keep-me', '  name: x') + TAIL50;
+    const bak50Pure = L('- id: keep-me', '  name: x', '- id: lost-key', '  name: y',
+      '- insert:', '    - id: lost-ins', '      name: z');
+    const merge50 = health50.mergePatchEntries(cur50Pure, bak50Pure);
+    check(merge50.moved === 2 && merge50.text.includes('- id: lost-key' + NL + '  name: y')
+      && merge50.text.includes('    - id: lost-ins' + NL + '      name: z'),
+      `W50: 纯函数搬回 2 条且缩进正确（实得 moved=${merge50.moved}）`);
+    const rows50 = merge50.text.split(NL);
+    check(rows50.findIndex((l) => l === '- id: lost-key') < rows50.findIndex((l) => /dsh-undo-savepoint mount/.test(l)),
+      'W50: 纯函数把新增顶层条目插在挂载块之前');
+    const noop50 = health50.mergePatchEntries(cur50Pure, L('- id: keep-me', '  name: x'));
+    check(noop50.moved === 0 && noop50.text === cur50Pure, 'W50: 纯函数在差集为空时原文逐字返回');
+  }
+
   // W09: 会话普查——浅层计数 + 零字节异常 + 深层结构分类
   {
     const sessDir = join(homeW, 'sessions', 'census-test');

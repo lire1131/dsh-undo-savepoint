@@ -38,7 +38,7 @@ if (args.home) process.env.DSH_HOME = args.home;
 // DSH_HOME 是 core.mjs 的加载期常量，--home 必须先落到环境变量，因此这里用动态导入。
 const { buildConfig, runDoctor, runDoctorFix, t, DSH_HOME } = await import('../lib/core.mjs');
 
-const mark = (level) => (level === 'err' ? '❌' : level === 'warn' ? '⚠️' : '✅');
+const mark = (level) => (level === 'err' ? '❌' : level === 'warn' ? '⚠️' : level === 'info' ? 'ℹ️' : '✅');
 
 function printReport(report) {
   console.log(t('doctor.head', { level: report.summary.level, ok: report.summary.ok, warn: report.summary.warn, err: report.summary.err }));
