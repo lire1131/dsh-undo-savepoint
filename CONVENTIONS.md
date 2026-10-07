@@ -56,7 +56,7 @@
 
 **Tag：`vX.Y.Z`**，打在对应 `release:` commit 上，与 Release 同步创建（现状已符合，固化）。
 
-**Release 标题固定：`vX.Y.Z`**（纯版本号，主题看正文；不再出现 `v0.3.8 — 安全模式 2.0`、`dsh-undo-savepoint v0.4.1` 等变体）。
+**Release 标题一律纯版本号**（`v0.4.10`、`v0.5.0-canary.4`、`v0.5.0` 形态），主题句只进正文，不进标题；canary 与 stable 同规；tag 名与 Release 标题一致。历史上出现过的 `v0.3.8 — 安全模式 2.0`、`dsh-undo-savepoint v0.4.1` 等带主题句的变体不再新增。
 
 **Release 正文固定模板：**
 
