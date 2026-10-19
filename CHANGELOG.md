@@ -2,6 +2,22 @@
 
 dsh-undo-savepoint 的重要变更。日期为本地时间（UTC+8)。English version: [CHANGELOG.en.md](CHANGELOG.en.md)
 
+## [0.5.0-canary.6] - 2026-10-19
+
+### 新增
+
+- **插件页里的原生配置入口（PR #48 by @Sheldon-Bacchus）**。DSH 0.2.1 把插件自带的配置渲染在插件页，本插件此前只有设置页一个入口。现在 `plugins.bundle.config` 按包名挂上同一套面板，插件页与本插件设置页都能打开快照与恢复界面。`dsh.client.inject` 增 `@deepseek-ai/dsh-client-ui-plugin-manager` 一条，它只参与激活排序，不加载该包，0.2.0 及更早版本不受影响。
+- **tools 解析补齐 DSH_HOME 锚点**。本地挂载与隔离实例此前只有插件自身位置与 `DSH_ROOT` 两级锚点，`@deepseek-ai/dsh-tools` 解析不到就直接抛错。现在 `DSH_HOME/runtime` 与 `DSH_HOME/profiles/desktop` 也按序尝试，命中即止。
+
+### 修复
+
+- **补丁条目去重不再吞掉配置内部的列表（#47 by @youran0faust）**。条目识别原先只看缩进和 `- key:` 的形状，provider 配置里的 `models` 列表被当成 loader 条目登记，撞上同名条目就整段删除，有用户因此丢掉 175 行补丁内容和 84 条模型条目。现在只有顶格条目、以及顶层 `insert:` 之下的直接子条目才算 loader 条目，嵌套列表一律不登记。`fix` 侧按同一口径删除，不满足就跳过并在报告里记 skipped。判定档位维持 `fixable`，误删边界收窄到真条目。
+
+### 测试
+
+- 新增条目判定收紧的 9 条断言，覆盖嵌套列表不登记且 fix 后逐字节不变、顶层重复照旧修复、`insert` 子条目照旧修复、混合补丁只删顶层四种形状；门禁 smoke 增至 544 项。
+- 新增 inject 声明清单与本机绝对路径两条守卫，防止解析锚点再被写死到开发者机器上；门禁 smoke 增至 545 项。
+
 ## [0.5.0-canary.5] - 2026-10-05
 
 ### 新增

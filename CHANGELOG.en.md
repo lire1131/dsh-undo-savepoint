@@ -2,6 +2,22 @@
 
 Notable changes to dsh-undo-savepoint. Dates are in local time (UTC+8). 中文版:[CHANGELOG.md](CHANGELOG.md)
 
+## [0.5.0-canary.6] - 2026-10-19
+
+### Added
+
+- **A native configuration entry on the Plugins page (PR #48 by @Sheldon-Bacchus).** DSH 0.2.1 renders plugin-supplied configuration on the Plugins page, while this plugin only offered a Settings page entry. The `plugins.bundle.config` slot now carries the same panel keyed by package name, so both the Plugins page and the plugin's own settings page open the snapshot and restore UI. `dsh.client.inject` gains `@deepseek-ai/dsh-client-ui-plugin-manager`, which only orders activation and does not load that package, so 0.2.0 and earlier are unaffected.
+- **DSH_HOME anchors for tools resolution.** Local mounts and isolated instances only had two anchors, the plugin's own location and `DSH_ROOT`, and a failed resolution of `@deepseek-ai/dsh-tools` threw outright. `DSH_HOME/runtime` and `DSH_HOME/profiles/desktop` are now tried in order after those, stopping at the first hit.
+
+### Fixed
+
+- **Patch deduplication no longer swallows lists inside configuration (#47 by @youran0faust).** Entry detection only looked at indentation and the `- key:` shape, so a `models` list inside a provider's config was registered as a loader entry and deleted whole on a name collision, and one user lost 175 lines of patch content plus 84 model entries this way. Only top-level entries and the direct children of a top-level `insert:` count as loader entries now, and nested lists are never registered. The `fix` path deletes by the same rule, or skips the entry and reports it as skipped. The `fixable` level stays as is, with the mis-deletion boundary narrowed to true entries.
+
+### Tests
+
+- Nine assertions cover the narrowed entry rule across four shapes, nested lists left unregistered and byte-identical after a fix, top-level duplicates still repaired, `insert` children still repaired, and a mixed patch repairing only the top-level entry; the gate smoke suite is now 544 checks.
+- Two guards cover the inject declaration list and absolute developer paths, so resolution anchors cannot be hard-coded to one machine again; the gate smoke suite is now 545 checks.
+
 ## [0.5.0-canary.5] - 2026-10-05
 
 ### Added
