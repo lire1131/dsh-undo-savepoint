@@ -20,7 +20,7 @@
 
 ### canary 分层发布（0.5.0 起）
 
-1. 实验版走 canary 通道：版本形态 `0.5.0-canary.N`（tag `v0.5.0-canary.N`），只发 git tag + GitHub Release，不发 npm、不进 CHANGELOG。
+1. 实验版走 canary 通道：版本形态 `0.5.0-canary.N`（tag `v0.5.0-canary.N`），只发 git tag + GitHub Release，不发 npm。canary 段同步收录进 CHANGELOG 与 CHANGELOG.en.md，自 canary.4 起执行；发布规范原文写的是「不进 CHANGELOG」，两者不一致时以本仓库为准。
 2. 稳定版（三段式）才发 npm。canary 与 stable 的 tag == Release 标题 == `package.json` version 三处一致规则不变。
 3. canary 号一旦对外出现即用过的号，不回收复用（与三段式同规）。
 4. 发布工作流（`.github/workflows/publish.yml`）的 npm 发布 job 以 `!contains(github.ref_name, '-')` 排除一切含连字符的 tag，canary tag 永不触发 npm。
