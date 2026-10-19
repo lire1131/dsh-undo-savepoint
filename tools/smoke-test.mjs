@@ -1409,6 +1409,12 @@ console.log('== B4b. patch manifest: multi-version substrings + client declarati
   }
   const clientText = await readFile(fileURLToPath(new URL('../lib/client.js', import.meta.url)), 'utf8');
   check(clientText.includes('const inject = ["locale", "slots"];'), 'B4b: client.js inject uses short service names');
+  // 本机绝对路径守卫：#47 与 PR #48 都踩过把作者本机目录写进解析锚点的坑，锚点只许走 DSH_ROOT / DSH_HOME。
+  const indexText = await readFile(fileURLToPath(new URL('../lib/index.js', import.meta.url)), 'utf8');
+  check(
+    !/\b[A-Za-z]:(?:[\\/])Users[\\/]/i.test(indexText) && !/\b[A-Za-z]:(?:[\\/])Users[\\/]/i.test(clientText),
+    'B4b: lib 下不含本机用户目录绝对路径（解析锚点只认 DSH_ROOT 与 DSH_HOME）',
+  );
 }
 
 console.log('== 38. B6: undo_scan — session health scan, fixable repair, corrupt isolation (v0.3.8) ==');
