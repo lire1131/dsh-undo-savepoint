@@ -2261,6 +2261,71 @@ console.log('== T2. boot preflight doctor + targeted repair (v0.4.8) ==');
   await cleanup(rootD);
 }
 
+console.log('== T2b. loader 条目判定收紧（#47）==');
+// #47：llm-pi-ai 的 providers.*.models 是条目 config 内部的列表，旧扫描器按缩进抓所有
+// `- id:`，同名模型被当成重复 loader 条目，fix=true 会删掉用户配置。判定收紧为「零缩进
+// 顶层条目」与「顶层 insert 的直接子条目」两类，其余一律不登记 id。
+{
+  const core = await import('../lib/core.mjs');
+  const root4 = await mkdtemp(join(tmpdir(), 'dsh-undo-loader47-'));
+  const home4 = join(root4, 'home');
+  const web4 = join(home4, 'profiles', 'web');
+  await mkdir(web4, { recursive: true });
+  await mkdir(join(home4, 'undo-snapshots', 'manual'), { recursive: true });
+  await mkdir(join(home4, 'undo-snapshots', 'auto'), { recursive: true });
+  const cfg4 = core.buildConfig({
+    profileName: 'web', homeDir: home4, profileDir: web4,
+    manualDir: join(home4, 'undo-snapshots', 'manual'), autoDir: join(home4, 'undo-snapshots', 'auto'), pluginDirs: [],
+  });
+  const patch4 = join(home4, 'cordis.patch.yml');
+  const loaderHits = (r) => r.checks.filter((c) => c.code === 'pre-loader-id');
+
+  // A) 嵌套 models 列表：同名 id 不登记，fix 不动文件
+  const nested = [
+    '- id: llm-pi-ai', '  config:', '    providers:', '      a:', '        models:',
+    '          - id: same-model', '      b:', '        models:', '          - id: same-model', '',
+  ].join('\n');
+  await writeFile(patch4, nested, 'utf8');
+  const repA = await core.runDoctor(cfg4);
+  check(loaderHits(repA).length === 0, '#47: nested models ids are not loader entries (no report)');
+  await core.runDoctorFix(cfg4);
+  check((await readFile(patch4, 'utf8')) === nested, '#47: fix leaves the nested config byte-identical');
+
+  // B) 顶层重复：仍检出（warn）并修掉，保留最后一条
+  const top = ['- id: dup-entry', '  name: one', '- id: dup-entry', '  name: two', ''].join('\n');
+  await writeFile(patch4, top, 'utf8');
+  const repB = await core.runDoctor(cfg4);
+  check(loaderHits(repB).length === 1 && loaderHits(repB)[0].fixable === true, '#47: top-level duplicate still detected and fixable');
+  await core.runDoctorFix(cfg4);
+  const afterB = await readFile(patch4, 'utf8');
+  check((afterB.match(/id: dup-entry/g) ?? []).length === 1 && afterB.includes('name: two') && !afterB.includes('name: one'), '#47: top-level duplicate repaired, last entry kept');
+
+  // C) 顶层 insert 的直接子条目：仍按 err 级检出并修掉
+  const ins = ['- insert:', '    - id: dup-ins', '      name: one', '    - id: dup-ins', '      name: two', ''].join('\n');
+  await writeFile(patch4, ins, 'utf8');
+  const repC = await core.runDoctor(cfg4);
+  check(loaderHits(repC).length === 1 && loaderHits(repC)[0].level === 'err', '#47: insert child duplicate still detected as err');
+  await core.runDoctorFix(cfg4);
+  const afterC = await readFile(patch4, 'utf8');
+  check((afterC.match(/id: dup-ins/g) ?? []).length === 1 && afterC.includes('name: two'), '#47: insert child duplicate repaired, last entry kept');
+
+  // D) 混合：顶层重复被修，嵌套同名模型原样保留
+  const mixed = [
+    '- id: dup-top', '  name: one', '- id: dup-top', '  name: two',
+    '- id: llm-pi-ai', '  config:', '    providers:', '      a:', '        models:',
+    '          - id: same-model', '      b:', '        models:', '          - id: same-model', '',
+  ].join('\n');
+  await writeFile(patch4, mixed, 'utf8');
+  const repD = await core.runDoctor(cfg4);
+  check(loaderHits(repD).length === 1 && String(loaderHits(repD)[0].name ?? '').includes('dup-top'), '#47: mixed patch reports only the top-level duplicate');
+  await core.runDoctorFix(cfg4);
+  const afterD = await readFile(patch4, 'utf8');
+  check((afterD.match(/id: dup-top/g) ?? []).length === 1 && afterD.includes('name: two') && !afterD.includes('name: one'), '#47: mixed patch drops the top-level duplicate only');
+  check((afterD.match(/same-model/g) ?? []).length === 2 && afterD.includes('- id: llm-pi-ai'), '#47: mixed patch keeps both nested model entries');
+
+  await cleanup(root4);
+}
+
 console.log('== T3. undo_doctor fix=true: 预检修复的工具面（v0.4.8）==');
 {
   const rootD3 = await mkdtemp(join(tmpdir(), 'dsh-undo-doctor-tool-'));
