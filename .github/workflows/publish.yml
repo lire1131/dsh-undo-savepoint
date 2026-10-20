@@ -28,6 +28,7 @@ jobs:
       - uses: actions/setup-node@v4
         with:
           node-version: 24
+          registry-url: https://registry.npmjs.org/
       - name: Upgrade npm for OIDC
         run: npm install -g npm@11
       - name: Install peer dependency for gates
@@ -47,5 +48,7 @@ jobs:
         run: |
           npm --version
           node -e "console.log('oidc-url=' + Boolean(process.env.ACTIONS_ID_TOKEN_REQUEST_URL) + ' oidc-token=' + Boolean(process.env.ACTIONS_ID_TOKEN_REQUEST_TOKEN))"
-      - name: Publish to npm (OIDC)
+      - name: Publish to npm (NPM_TOKEN)
         run: npm publish --provenance --access public
+        env:
+          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
