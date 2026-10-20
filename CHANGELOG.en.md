@@ -2,6 +2,63 @@
 
 Notable changes to dsh-undo-savepoint. Dates are in local time (UTC+8). 中文版:[CHANGELOG.md](CHANGELOG.md)
 
+## [0.5.0] - 2026-10-20
+
+### Added
+
+- **Startup health check**. Thirty seconds after startup the plugin inspects session directories, snapshot coverage, tolerance patches, and disk usage, combining the four dimensions into one report; it alerts only on findings and stays silent when healthy.
+- **Crash self-healing**. Two consecutive unfinished startups trigger safe mode automatically: a manual snapshot is taken first, the plugin set is backed up three ways, and the offline WebUI banner states the reason. The threshold is configurable and 0 disables it; a single abnormal exit does not trigger it.
+- **DSH boot guard**. An optional guard entry runs a full preflight before DSH starts, enters safe mode per configuration when a blocking problem is found, and keeps the complete boot output in a rolling log of 10 files; starting DSH directly is unchanged.
+- **DSH upgrade guard**. When the DSH version changes, the plugin takes an upgrade insurance snapshot automatically and produces a compatibility and session census report on the first post-upgrade boot; the guard can be turned off in settings.
+- **WebUI health panel**. The offline WebUI gains a health check button showing session health, snapshot coverage, patch status, and disk usage in one panel, lists findings item by item, and offers snapshot store size, cap settings, and one-click prune.
+- **Privacy report**. Scans configs and sessions for secret-shaped content and reports whether snapshot and export redaction covers them; output carries counts and file names only, never content. Available offline via `doctor --privacy`.
+- **Snapshot audit tool**. A new `audit-snapshots` command checks every historical snapshot's sensitive files for leftover plaintext secrets and reports counts and locations only, never content.
+- **Offline health entry**. The `doctor` command gains `--health` to print the four-dimension report, and the `undo_doctor` tool appends the last startup health summary to its output, so results are reachable even when DSH cannot boot.
+- **Caretaker settings**. Startup health check and DSH upgrade guard can each be turned off; both default to on.
+- **First-mount notice and consent**. The first mount explains what gets written and asks once in interactive environments; non-interactive runs auto-accept. Declining stops snapshots and tool registration, the choice is stored in settings, and later loads do not ask again.
+- **One-command uninstall and residue cleanup**. New `tools/uninstall.mjs` removes mount declarations, junctions, the desktop shortcut, and compatibility patches per profile; the snapshot store and settings are kept by default, and `--purge` removes them too. README gains an uninstall section.
+- **Doctor environment preflight gains two checks**. Windows long-path risk and Node capability (below 22.15, `undo_scan` repair degrades to a read-only notice) enter startup preflight as warnings that do not change the verdict.
+- **Partial recovery move-back on the desktop**. When bundles are restored but patch content is missing, doctor lists the missing entries from the newest backup and supports item-level move-back; it takes a pre-fix snapshot and leaves a `.dsh-undo-bak` copy of the current patch.
+- **Official sanitize traces recognized and restored**. The plugin identifies traces left by the desktop recovery dialog by three signals (backup file exists, current patch lacks the plugin, bundle list lacks the plugin), reports the newest backup name, and restores patch and mount declarations via `undo_doctor fix=true` or offline `doctor -Fix`, leaving a `.dsh-undo-bak` copy first.
+- **Native config entry on the plugin page**. From DSH 0.2.1 the plugin page can render the same snapshot and restore panel as the plugin's settings page; `dsh.client.inject` gains an activation-order declaration only, loads no new package, and 0.2.0 and earlier are unaffected (PR #48 by @Sheldon-Bacchus).
+- **tools resolution gains DSH_HOME anchors**. Local mounts and isolated instances now also try `DSH_HOME/runtime` and `DSH_HOME/profiles/desktop` in order after the plugin's own location and `DSH_ROOT`, stopping at the first hit.
+- **Desktop-running reminder**. Startup preflight detects the desktop process and reminds the user to quit it completely; probe failures and a confirmed absence produce no reminder, and isolated runs skip the probe.
+
+### Changed
+
+- **Core module split**. Constants and pure utilities, the session pipeline, the snapshot family, and the doctor/health family move into `base` / `session` / `snapshot` / `health`; `core` keeps the facade and re-exports, so the public interface is unchanged.
+- **Snapshot manifest format anchors**. New snapshots write `schemaVersion` and `compression` into the manifest, anchoring future format evolution; older plugin versions still read new snapshots, so this is not a breaking change.
+- **Automated npm publishing**. Stable tags trigger the publish workflow, which runs the full gate suite first and publishes via OIDC; canary tags are excluded by a job-level guard and never reach npm.
+- **Canary staged releases**. From 0.5.0 experimental builds ship via the canary channel as git tag plus GitHub Release only; stable versions are the ones that reach npm.
+- **Support range names the desktop edition**. README and package metadata state support up to DSH 0.2.0-rc.2 desktop and document the safe-mode limitation on the desktop profile.
+- **README repositioning**. Both editions move from an undo tool to a security caretaker, with proactive checks, upgrade guarding, and crash rescue as the main narrative.
+- **New health endpoint in the REST contract**. Both in-host and standalone servers expose `GET /api/undo/health` returning the four-dimension report, with the route contract registry updated in step.
+- **PowerShell offline tools enter deprecation**. The GUI and CLI show a deprecation notice and will be removed in 0.6.0; the Node offline WebUI is the replacement, feature-aligned and actively maintained.
+- **Safe mode refuses to act on the desktop profile**. Desktop patches are host-managed, so `safe-mode on` is refused before any write and points to the third button of the official recovery dialog; `off` still runs, and crash self-healing no longer claims it entered safe mode when refused.
+
+### Security
+
+- **Patch and credential layers covered by redaction**. `cordis.patch.yml`, `cordis.yml` in the same directory, and `.yml` / `.yaml` suffixes all go through the YAML redaction path; token values go only to the local vault. Existing plaintext snapshots can be cleaned with `tools/redact-existing.mjs`, which reports by default, writes only with `--apply`, and is idempotent.
+- **Privacy report output red line**. The privacy check emits counts and file names only; no secret content ever leaves the scanner.
+
+### Fixed
+
+- **v4 session generation census**. v0, v2, v3, and v4 each get their own bucket, higher generations are counted separately, and v4 is no longer merged into v3.
+- **Mount-entry dedupe no longer touches user config**. Only entries whose `id` or `name` is the plugin name are recognized; mount positions with a non-empty `config` block are exempt, preferring a duplicate over touching user config.
+- **Removing mount entries leaves no broken structure**. Removal is entry-grained: the plugin entry, its config block, and marker comments move out together, with new dangling-key detection and cleanup.
+- **Profile detection gains six layers**. Resolution follows explicit config, settings file, command line, host profile channel, environment variable, and default, in that order; `undo_list` and `undo_doctor` name the source. When the new scope has no snapshot store after a profile switch, the historical location is reused and noted, so old snapshots do not seem to vanish.
+- **Official desktop bundles are no longer misjudged**. On the desktop profile, unresolvable bundles in the `@deepseek-ai/dsh` scope are recorded as healthy with a note that the host launches them; the same names still hard-fail on non-desktop profiles.
+- **Bundle resolution gains the installation anchor**. Resolution falls back through installation directory, profile directory, and home directory; the installation anchor is checked as a product tree first and simply absent when `DSH_ROOT` points elsewhere.
+- **Profile directory discovery no longer falls back to a missing directory**. Only a missing `profiles/` root triggers the fallback; when `profiles/` exists but has no scannable directories, the scope is treated as empty with a clear notice.
+- **Desktop shortcut resolution no longer hangs**. PowerShell calls that resolve the desktop directory and create the shortcut now carry a timeout and fall back to the user desktop directory, so DSH exit is not held up.
+- **Patch-entry dedupe no longer swallows config lists**. Only top-level entries and direct children of a top-level `insert:` count as loader entries; nested lists are never registered. `fix` removes by the same rule, skips what does not match, and records them as skipped, narrowing accidental deletion to true entries (#47 by @youran0faust).
+- **tools resolution picked stale dependencies under local link installs**. When the plugin's own `node_modules` held an older `@deepseek-ai/dsh-tools`, anchor resolution only resolved without loading, and the stale package failed to import with a missing `CallId` export, taking the whole plugin down. Resolution now loads each anchor and moves on when one fails, so desktop link installs and normal installs both land on the host runtime.
+
+### Tests
+
+- Smoke tests adopt baseline anchoring, so expected outputs no longer depend on hard-coded counts; the full suite grows to 545 checks.
+- New assertions cover session format v4, mount exemptions, six-layer profile detection, installation anchors, desktop refusal, patch-entry rules, redaction, and existing-store cleanup, including a verbatim golden sample of the issue's original patch shape.
+
 ## [0.5.0-canary.6] - 2026-10-19
 
 ### Added

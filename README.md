@@ -147,14 +147,14 @@ mklink /J "<你的DSH安装>\node_modules\dsh-undo-savepoint" "D:\dsh\plugins\ds
 
 已验证：桌面版 DSH 0.2.0-rc.2（cordis 4.0.4 全 peer 树），同时覆盖 `web` profile 与命令行、局外 WebUI、局外 CLI。工程内四道门禁零失败，覆盖 CLI 与 Web 端。
 
-待验证：桌面端真机验收。勾掉之前构建仍按真机验收项标注口径。
+已验证：隔离 Electron 实例（desktop profile）的安装、GUI 工具回执、安全模式拒动与卸载。
 
 若你的 DSH 版本不在声明范围内，启动会被判不兼容。此时不要改 `package.json`，改用官方的精确版本豁免，豁免写在 profile 自己的 `compatibility.json` 里，不动依赖清单与 patch 层：
 
 ```bat
 dsh plugin --profile web version-exemptions
-dsh plugin --profile web allow-version dsh-undo-savepoint@0.4.9 --dsh-version <运行时版本> --accept-risk
-dsh plugin --profile web revoke-version dsh-undo-savepoint@0.4.9 --dsh-version <运行时版本>
+dsh plugin --profile web allow-version dsh-undo-savepoint@0.5.0 --dsh-version <运行时版本> --accept-risk
+dsh plugin --profile web revoke-version dsh-undo-savepoint@0.5.0 --dsh-version <运行时版本>
 ```
 
 第一条列出现有授权，第二条提交豁免，第三条撤销。豁免只授权加载，不授权依赖脚本；插件升级与 DSH 升级都不继承授权，每次都要重新确认。范围声明没有写死到最新版，是因为 DSH 各版仍可能有破坏性变动，新版本要实测过再扩范围。

@@ -131,14 +131,14 @@ At install time and at profile startup the plugin compares the runtime version r
 
 Verified: DSH 0.2.0-rc.2 desktop build (full peer tree with cordis 4.0.4), covering the `web` profile together with the command line, the offline WebUI and the offline CLI. All four in-repo gates pass with zero failures, which is what the CLI and web coverage rests on.
 
-Pending: on-device acceptance on the desktop edition. Until that is ticked off the desktop row keeps the pending label.
+Verified: installation, GUI tool receipts, safe-mode refusal, and uninstall on an isolated Electron instance (desktop profile).
 
 If your DSH version falls outside the declared range, startup reports it as incompatible. Do not edit `package.json`; use the official exact-version exemption instead, which lives in the profile's own `compatibility.json` and touches neither the dependency manifest nor the patch layer:
 
 ```bat
 dsh plugin --profile web version-exemptions
-dsh plugin --profile web allow-version dsh-undo-savepoint@0.4.9 --dsh-version <runtime> --accept-risk
-dsh plugin --profile web revoke-version dsh-undo-savepoint@0.4.9 --dsh-version <runtime>
+dsh plugin --profile web allow-version dsh-undo-savepoint@0.5.0 --dsh-version <runtime> --accept-risk
+dsh plugin --profile web revoke-version dsh-undo-savepoint@0.5.0 --dsh-version <runtime>
 ```
 
 The first lists existing grants, the second submits one, the third revokes it. An exemption only authorises loading, never dependency scripts, and neither a plugin upgrade nor a DSH upgrade inherits a grant, so each of them needs a fresh confirmation. The declared range is not pinned to the newest release because DSH can still ship breaking changes; the range expands once a new version has been tested here.

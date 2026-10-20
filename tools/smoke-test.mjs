@@ -1397,7 +1397,7 @@ console.log('== B4b. patch manifest: multi-version substrings + client declarati
     typeof pkg.engines.dsh === 'string' && dshSegs[dshSegs.length - 1] === '>=0.2.0-rc.2' && JSON.stringify(dshSegs.slice(0, -1)) === JSON.stringify(w42Base),
     'W42: engines.dsh 末段为 >=0.2.0-rc.2 且原有七段逐字保留（OR 串未重构）',
   );
-  check(pkg.version === '0.4.9', 'W42: package.json version 仍为 0.4.9（canary 批次不改版本号）');
+  check(pkg.version === '0.5.0', 'W42: package.json version 为 0.5.0（stable 定稿）');
   const readmes42 = [
     ['README.md', '桌面端'],
     ['README.en.md', 'Desktop'],
