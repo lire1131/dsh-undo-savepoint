@@ -43,5 +43,9 @@ jobs:
           node tools/e2e-watch.mjs
         env:
           DSH_ROOT: ${{ github.workspace }}
+      - name: Show npm and OIDC context
+        run: |
+          npm --version
+          node -e "console.log('oidc-url=' + Boolean(process.env.ACTIONS_ID_TOKEN_REQUEST_URL) + ' oidc-token=' + Boolean(process.env.ACTIONS_ID_TOKEN_REQUEST_TOKEN))"
       - name: Publish to npm (OIDC)
         run: npm publish --provenance --access public
