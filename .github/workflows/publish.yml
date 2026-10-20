@@ -18,8 +18,9 @@ jobs:
     # canary 守卫：ref_name 含 '-' 一律跳过（v0.5.0-canary.1 等）
     if: "!contains(github.ref_name, '-')"
     runs-on: ubuntu-latest
+    # npm trusted publishing（OIDC）被 npm/cli#9969 的不可变 subject 挡住，
+    # 暂时走 NPM_TOKEN；npm 修复后恢复 id-token 与 --provenance。
     permissions:
-      id-token: write   # npm OIDC（trust publishing，无令牌落盘）
       contents: read
     steps:
       - uses: actions/checkout@v4
@@ -29,7 +30,7 @@ jobs:
         with:
           node-version: 24
           registry-url: https://registry.npmjs.org/
-      - name: Upgrade npm for OIDC
+      - name: Upgrade npm
         run: npm install -g npm@11
       - name: Install peer dependency for gates
         run: npm install --no-save @deepseek-ai/dsh-tools
@@ -44,10 +45,6 @@ jobs:
           node tools/e2e-watch.mjs
         env:
           DSH_ROOT: ${{ github.workspace }}
-      - name: Show npm and OIDC context
-        run: |
-          npm --version
-          node -e "console.log('oidc-url=' + Boolean(process.env.ACTIONS_ID_TOKEN_REQUEST_URL) + ' oidc-token=' + Boolean(process.env.ACTIONS_ID_TOKEN_REQUEST_TOKEN))"
       - name: Publish to npm (NPM_TOKEN)
         run: npm publish --access public
         env:
