@@ -49,6 +49,6 @@ jobs:
           npm --version
           node -e "console.log('oidc-url=' + Boolean(process.env.ACTIONS_ID_TOKEN_REQUEST_URL) + ' oidc-token=' + Boolean(process.env.ACTIONS_ID_TOKEN_REQUEST_TOKEN))"
       - name: Publish to npm (NPM_TOKEN)
-        run: npm publish --provenance --access public
+        run: npm publish --access public
         env:
           NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
