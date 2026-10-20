@@ -27,8 +27,9 @@ jobs:
           ref: ${{ inputs.ref || github.ref }}
       - uses: actions/setup-node@v4
         with:
-          node-version: 22
-          registry-url: https://registry.npmjs.org/
+          node-version: 24
+      - name: Upgrade npm for OIDC
+        run: npm install -g npm@11
       - name: Install peer dependency for gates
         run: npm install --no-save @deepseek-ai/dsh-tools
       - name: Gates (same suite as CI)
@@ -44,5 +45,3 @@ jobs:
           DSH_ROOT: ${{ github.workspace }}
       - name: Publish to npm (OIDC)
         run: npm publish --provenance --access public
-        env:
-          NODE_AUTH_TOKEN: ""
