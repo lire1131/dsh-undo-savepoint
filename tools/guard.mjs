@@ -43,7 +43,7 @@ const { buildConfig, runDoctor, safeModeSet, DSH_HOME } = await import('../lib/c
 const cfg = buildConfig({ profileName: opt('--profile') ?? undefined });
 
 console.log(`guard: 预检中（profile ${cfg.profileName}）...`);
-const report = await runDoctor(cfg);
+const report = await runDoctor(cfg, { desktopShortcut: true });
 const hard = report.checks.filter((c) => c.level === 'err');
 for (const c of report.checks) {
   const mark = c.level === 'err' ? '❌' : c.level === 'warn' ? '⚠️' : '✅';

@@ -20,6 +20,60 @@ import { fileURLToPath } from 'node:url';
 import { execFile } from 'node:child_process';
 import { homedir } from 'node:os';
 import {
+  NAME_RE, normalizeInstances, resolveInstance, scanProcessArgs, storeRootsFor, storeRootsProfileFor,
+  describeStoreAt, listProfilesFor, isImplicitStoreDir, snapshotProfileMatch, normalizePort,
+} from '../lib/instances.mjs';
+import { scanLocalInstances } from '../lib/scan.mjs';
+
+// ── 参数解析 ──────────────────────────────────────────────────────────────
+function parseArg(argv) {
+  const get = (name) => {
+    const i = argv.indexOf(name);
+    return i >= 0 && argv[i + 1] ? argv[i + 1] : null;
+  };
+  return {
+    profile: get('--profile') ?? get('-p'),
+    instance: get('--instance'),
+    home: get('--home'),
+    noOpen: argv.includes('--no-open'),
+    lang: get('--lang'),
+  };
+}
+const args = parseArg(process.argv.slice(2));
+if (args.lang) process.env.DSH_UNDO_LANG = args.lang;
+
+// ── W61：多实例裁决必须在动态 import 之前完成 ────────────────────────────────
+// DSH_HOME 是 lib/base.mjs 的加载期常量，import 之后再改环境变量读到的还是旧值。
+// 所以这里先用纯 fs 把 settings 里的实例列表读出来（路径按 env 推断，与 core 同规则），
+// 裁决完再把最终 home 落到 process.env.DSH_HOME，最后才 import core。
+const bootHomeGuess = process.env.DSH_HOME ?? join(homedir(), '.dsh');
+const bootSettingsPath = process.env.DSH_UNDO_SETTINGS ?? join(bootHomeGuess, 'undo', 'settings.json');
+async function readBootSettings() {
+  try { return JSON.parse(await fs.readFile(bootSettingsPath, 'utf8')); } catch { return {}; }
+}
+const bootSettings = await readBootSettings();
+const bootInstances = normalizeInstances(bootSettings.instances);
+const bootResolved = resolveInstance({
+  instances: bootInstances,
+  current: bootSettings.current,
+  instance: args.instance,
+  home: args.home,
+  profile: args.profile,
+  envHome: process.env.DSH_HOME,
+});
+if (!bootResolved.ok) {
+  const known = (bootResolved.known ?? []).join(', ');
+  console.error(`✖ ${bootResolved.error}${known ? `（已配置的实例：${known}）` : '（settings 里没有配置 instances）'}`);
+  process.exit(2);
+}
+if (bootResolved.home && !existsSync(bootResolved.home)) {
+  console.error(`✖ 实例 home 目录不存在：${bootResolved.home}（检查 --home 或 settings 里的 instances[].home）`);
+  process.exit(2);
+}
+if (bootResolved.home) process.env.DSH_HOME = bootResolved.home;
+if (bootResolved.profile) process.env.DSH_PROFILE = bootResolved.profile;
+
+const {
   buildConfig,
   SETTINGS_FILE,
   LEGACY_ROOT,
@@ -53,28 +107,173 @@ import {
   ensureDesktopShortcut,
   ensureGuardShortcut,
   t,
-} from '../lib/core.mjs';
+} = await import('../lib/core.mjs');
+// W62：库根作用域判定与局内同一实现（base 已随 core import 加载，这里取缓存）。
+const { describeStore, loadSettingsAt, applySettingsToCfg } = await import('../lib/base.mjs');
 
 const WEBUI_DIR = fileURLToPath(new URL('./webui', import.meta.url));
 const STATE_FILE = join(dirname(SETTINGS_FILE), 'undo-server.json');
 
-// ── 参数解析 ──────────────────────────────────────────────────────────────
-function parseArg(argv) {
-  const get = (name) => {
-    const i = argv.indexOf(name);
-    return i >= 0 && argv[i + 1] ? argv[i + 1] : null;
-  };
-  return {
-    profile: get('--profile') ?? get('-p'),
-    noOpen: argv.includes('--no-open'),
-    lang: get('--lang'),
-  };
+// W61：实例列表与默认实例存在与其它设置同一个 settings 文件里（JSON），与 core 的
+// 设置读写共用一份，避免出现两套配置源。
+async function readServerSettings() {
+  try { return JSON.parse(await fs.readFile(SETTINGS_FILE, 'utf8')); } catch { return {}; }
 }
-const args = parseArg(process.argv.slice(2));
-if (args.lang) process.env.DSH_UNDO_LANG = args.lang;
+async function writeServerSettings(obj) {
+  await fs.mkdir(dirname(SETTINGS_FILE), { recursive: true });
+  await fs.writeFile(SETTINGS_FILE, JSON.stringify(obj, null, 2) + '\n', 'utf8');
+}
 
 // ── 构建引擎 cfg（与局内同一构造器）与崩溃横幅 ──────────────────────────────
-const cfg = buildConfig({ profileName: args.profile ?? undefined, bootAlert: null });
+/** 实例自己的 settings 文件；切到某实例后，所有可编辑设置都以这份文件为准。 */
+const instanceSettingsPath = (home) => join(home, 'undo', 'settings.json');
+function buildCfg(res, profileOverride) {
+  const home = res?.home ?? null;
+  const profile = String(profileOverride ?? res?.profile ?? '').trim() || null;
+  const overrides = { profileName: profile ?? args.profile ?? undefined, homeDir: home ?? undefined, bootAlert: null };
+  // W61：buildConfig 的 manualDir/autoDir 来自 settings 与 resolveStoreRoots，单传 homeDir 不会
+  // 搬动快照库。切实例必须显式重绑，否则切了 home 还在读旧库，撤销会跨实例串味。
+  const roots = storeRootsFor(home);
+  if (roots) { overrides.manualDir = roots.manualDir; overrides.autoDir = roots.autoDir; }
+  const built = buildConfig(overrides);
+  // 第二轮：库根按 home × profile 解析；目标实例自己的 settings 才是可编辑设置的来源。
+  if (home && roots) {
+    built.settingsFile = instanceSettingsPath(home);
+    const raw = loadSettingsAt(built.settingsFile);
+    const targetProfile = built.profileName ?? 'web';
+    const proots = storeRootsProfileFor(home, targetProfile);
+    built.manualDir = proots.manualDir;
+    built.autoDir = proots.autoDir;
+    if (raw) applySettingsToCfg(built, raw);
+    // settings 里的目录是固定值；只有真正自定义（非默认布局）的目录才保留。
+    built.manualDir = raw && !isImplicitStoreDir(home, raw.manualDir) ? raw.manualDir : proots.manualDir;
+    built.autoDir = raw && !isImplicitStoreDir(home, raw.autoDir) ? raw.autoDir : proots.autoDir;
+    built.storeInheritedFrom = proots.inheritedFrom ?? null;
+  }
+  built.instanceName = res?.name ?? null;
+  built.instanceSource = res?.source ?? null;
+  built.instancePort = res?.port ?? null;
+  return built;
+}
+const bootProfile = args.profile ?? bootResolved.profile ?? (typeof bootSettings.currentProfile === 'string' ? bootSettings.currentProfile : null);
+let cfg = buildCfg(bootResolved, bootProfile);
+
+const bootProfileResolved = bootProfile ?? null;
+/** 快照目录里 manifest 的条数（只用于 profile 维度总量显示）。 */
+async function countStoreSnapshots(roots) {
+  let n = 0;
+  for (const base of [roots?.manualDir, roots?.autoDir]) {
+    if (!base) continue;
+    try {
+      const entries = await fs.readdir(base, { withFileTypes: true });
+      for (const e of entries) if (e.isDirectory() && existsSync(join(base, e.name, 'manifest.json'))) n += 1;
+    } catch { /* 目录不存在 = 0 条 */ }
+  }
+  return n;
+}
+/** 某个 home × profile 的库根详情；liveCfg 传入时复用已算好的列表。 */
+async function profileInfoFor(home, profile, liveCfg) {
+  const roots = storeRootsProfileFor(home, profile);
+  let manualDir = roots.manualDir;
+  let autoDir = roots.autoDir;
+  const raw = loadSettingsAt(instanceSettingsPath(home));
+  if (raw && !isImplicitStoreDir(home, raw.manualDir)) manualDir = raw.manualDir;
+  if (raw && !isImplicitStoreDir(home, raw.autoDir)) autoDir = raw.autoDir;
+  const store = describeStoreAt(home, profile, manualDir, autoDir, LEGACY_ROOT);
+  const total = liveCfg ? (await listSnapshots(liveCfg)).length : await countStoreSnapshots({ manualDir, autoDir });
+  return {
+    name: profile, manualDir, autoDir,
+    storeRoot: store.root, storeScope: store.scope, sharedStore: store.shared,
+    total, exists: roots.exists === true,
+  };
+}
+/** 一个 home 下所有 profile 的库根详情。 */
+async function profilesInfoFor(home) {
+  const out = [];
+  for (const name of listProfilesFor(home)) out.push(await profileInfoFor(home, name, name === cfg.profileName ? cfg : null));
+  return out;
+}
+/** 同 home 切 profile 的 cfg 副本（只换库根与 profileDir）。 */
+function cfgForProfile(target, profile) {
+  const home = target.homeDir ?? null;
+  const roots = storeRootsProfileFor(home, profile);
+  const raw = loadSettingsAt(target.settingsFile);
+  let manualDir = roots.manualDir;
+  let autoDir = roots.autoDir;
+  if (raw && !isImplicitStoreDir(home, raw.manualDir)) manualDir = raw.manualDir;
+  if (raw && !isImplicitStoreDir(home, raw.autoDir)) autoDir = raw.autoDir;
+  return { ...target, profileName: profile, profileDir: join(home, 'profiles', profile), manualDir, autoDir, storeInheritedFrom: roots.inheritedFrom ?? null };
+}
+/** 生效实例统一形状。 */
+function effectivePayload(ownPort) {
+  const home = cfg.homeDir ?? null;
+  const store = describeStoreAt(home, cfg.profileName, cfg.manualDir, cfg.autoDir, LEGACY_ROOT);
+  return {
+    name: cfg.instanceName ?? null, port: cfg.instancePort ?? null,
+    home, profile: cfg.profileName ?? null, profileSource: cfg.profileSource ?? null,
+    source: cfg.instanceSource ?? null, storeRoot: store.root, storeScope: store.scope,
+    settingsFile: cfg.settingsFile, mode: 'local', serverPort: ownPort ?? null,
+  };
+}
+/** 探测实例端口：旧版插件（无 profileName/storeRoot）标 hasApi=false。 */
+async function probeInstance(inst) {
+  const out = {
+    name: inst.name, port: inst.port ?? null, home: inst.home, profile: inst.profile ?? null, url: inst.url ?? null,
+    reachable: false, hasApi: false, apiVersion: null, currentProfile: null,
+    profiles: listProfilesFor(inst.home), total: null, storeRoot: null, settingsFile: null, instanceName: null, probedHome: null, homeMismatch: false, error: null,
+  };
+  if (out.port) {
+    try {
+      const r = await fetch(`http://127.0.0.1:${out.port}/api/undo/status`, { signal: AbortSignal.timeout(1200) });
+      out.reachable = true;
+      if (r.ok) {
+        const data = await r.json().catch(() => null);
+        if (data && data.ok === true) {
+          out.hasApi = data.profileName !== undefined || data.storeRoot !== undefined;
+          out.apiVersion = out.hasApi ? 2 : null;
+          if (typeof data.profileName === 'string') out.currentProfile = data.profileName;
+          if (typeof data.homeDir === 'string' && data.homeDir !== '') out.probedHome = data.homeDir;
+          if (Number.isFinite(data.total)) out.total = data.total;
+          if (typeof data.storeRoot === 'string') out.storeRoot = data.storeRoot;
+          if (typeof data.settingsFile === 'string') out.settingsFile = data.settingsFile;
+          if (typeof data.instanceName === 'string') out.instanceName = data.instanceName;
+          out.profiles = listProfilesFor(out.home);
+        }
+      }
+    } catch (error) {
+      out.error = String(error?.message ?? error);
+    }
+  }
+  // 配置里的 home 是用户写的意志，探测只补「端口实际指向哪」的旁证，绝不覆盖。
+    out.homeMismatch = !!(out.probedHome && String(out.probedHome).toLowerCase().replace(/[\\/]+$/, '') !== String(out.home).toLowerCase().replace(/[\\/]+$/, ''));
+    const settings = loadSettingsAt(instanceSettingsPath(out.home)) ?? {};
+  if (!out.currentProfile) {
+    out.currentProfile = typeof settings.currentProfile === 'string' ? settings.currentProfile
+      : typeof settings.profileName === 'string' ? settings.profileName : (out.profile ?? 'web');
+  }
+  if (out.total === null) {
+    const pi = await profileInfoFor(out.home, out.currentProfile, null);
+    out.total = pi.total;
+    out.storeRoot = out.storeRoot ?? pi.storeRoot;
+  }
+  if (!out.settingsFile) out.settingsFile = instanceSettingsPath(out.home);
+  return out;
+}
+// W61：切换实例时若有进行中的长操作，排队等它们结束，不拒绝（用户拍板项）。
+// 只包住会写盘或长时间跑的四类：撤销、恢复、导出、导入。
+let inflightOps = 0;
+const withOpLock = async (fn) => {
+  inflightOps += 1;
+  try { return await fn(); } finally { inflightOps -= 1; }
+};
+async function waitOpsIdle(timeoutMs = 30000) {
+  const t0 = Date.now();
+  while (inflightOps > 0 && Date.now() - t0 < timeoutMs) {
+    await new Promise((r) => setTimeout(r, 50));
+  }
+  return inflightOps === 0;
+}
+
 
 async function computeBootAlert() {
   try {
@@ -202,19 +401,47 @@ const server = createServer(async (req, res) => {
         const canRedo = pre !== undefined && !list.some((s) => s.time > pre.time && (s.kind !== 'pre-restore' || !s.consumed));
         const lastGood = await lastGoodSnapshot(cfg, list);
         const safe = await safeModeStatus(cfg);
-        return send(res, 200, { ok: true, canUndo, canRedo, total: list.length, bootAlert: cfg.bootAlert?.crashed === true, crashReason: cfg.bootAlert?.crashReason ?? null, lastGoodSnapshotId: cfg.bootAlert?.lastGoodId ?? lastGood?.id ?? null, safeModeActive: safe.active === true, safeModeEnteredAt: safe.enteredAt ?? null, profiles: [cfg.profileName] });
+        const homeNow = cfg.homeDir ?? null;
+        const store = describeStoreAt(homeNow, cfg.profileName, cfg.manualDir, cfg.autoDir, LEGACY_ROOT);
+        const profilesInfo = await profilesInfoFor(homeNow);
+        const profileDetail = profilesInfo.find((p) => p.name === cfg.profileName) ?? null;
+        const ownPort = server.address()?.port ?? null;
+        return send(res, 200, { ok: true, canUndo, canRedo, total: list.length, bootAlert: cfg.bootAlert?.crashed === true, crashReason: cfg.bootAlert?.crashReason ?? null, lastGoodSnapshotId: cfg.bootAlert?.lastGoodId ?? lastGood?.id ?? null, safeModeActive: safe.active === true, safeModeEnteredAt: safe.enteredAt ?? null, profiles: [cfg.profileName], profileName: cfg.profileName ?? null, profileSource: cfg.profileSource ?? null, storeRoot: store.root, storeScope: store.scope, sharedStore: store.shared, storeInheritedFrom: cfg.storeInheritedFrom ?? null, instanceName: cfg.instanceName ?? null, instanceSource: cfg.instanceSource ?? null, instancePort: cfg.instancePort ?? null, port: ownPort, homeDir: homeNow, settingsFile: cfg.settingsFile, instancesFile: SETTINGS_FILE, mode: 'local', profileDetail, profilesInfo });
       }
       if (method === 'GET' && path === '/api/undo/list') {
-        const snapshots = (await listSnapshots(cfg)).map((s) => { const { _dir, _store, ...rest } = s; return { ...rest, location: _store ?? 'auto' }; });
-        return send(res, 200, { ok: true, snapshots });
+        // 第二轮：profile 只做归属标注与统计，不丢数据。
+        const wantProfile = (url.searchParams.get('profile') ?? '').trim() || (cfg.profileName ?? '');
+        const includeShared = url.searchParams.get('includeShared') === '1' || url.searchParams.get('includeShared') === 'true';
+        const homeNow = cfg.homeDir ?? null;
+        const store = describeStoreAt(homeNow, cfg.profileName, cfg.manualDir, cfg.autoDir, LEGACY_ROOT);
+        const snapshots = (await listSnapshots(cfg)).map((s) => {
+          const { _dir, _store, ...rest } = s;
+          return {
+            ...rest,
+            location: _store ?? 'auto',
+            profileMatch: snapshotProfileMatch(rest, wantProfile, store.scope),
+          };
+        });
+        const countByProfile = { web: 0, desktop: 0, unknown: 0 };
+        for (const s of snapshots) {
+          const bucket = store.scope === 'scoped'
+            ? (cfg.profileName ?? 'unknown')
+            : (s.profileMatch === null ? 'unknown' : (typeof s.profile === 'string' ? s.profile : 'unknown'));
+          if (bucket === 'web' || bucket === 'desktop') countByProfile[bucket] += 1;
+          else countByProfile.unknown += 1;
+        }
+        return send(res, 200, {
+          ok: true, snapshots, profile: wantProfile, includeShared,
+          store: { root: store.root, scope: store.scope, shared: store.shared }, countByProfile,
+        });
       }
       if (method === 'GET' && path === '/api/undo/doctor') {
-        return send(res, 200, { ok: true, ...await runDoctor(cfg) });
+        return send(res, 200, { ok: true, ...await runDoctor(cfg, { desktopShortcut: true }) });
       }
       if (method === 'POST' && path === '/api/undo/doctor/fix') {
         // 预检自愈（v0.4.8）：清单 BOM / patch 重复 loader id / 悬空 junction 等定点修复，
         // 修前先落一个手动快照；返回修复清单 + 复查报告（字段与 GET doctor 同形）。
-        const r = await runDoctorFix(cfg);
+        const r = await runDoctorFix(cfg, { desktopShortcut: true });
         return send(res, 200, { ok: true, snapshotId: r.snapshotId ?? null, applied: r.applied ?? [], fixed: r.fixed ?? 0, failed: r.failed ?? 0, before: r.before, ...r.report });
       }
       if (method === 'GET' && path === '/api/undo/diff') {
@@ -225,7 +452,10 @@ const server = createServer(async (req, res) => {
         return send(res, 200, { ok: true, id: snap.id, diff: await diffSnapshotStructured(cfg, snap) });
       }
       if (method === 'GET' && path === '/api/undo/settings') {
-        return send(res, 200, { ok: true, settings: publicSettings(cfg) });
+        // 热重读：另一个入口（局内面板 / 插件页）改了同一个 settings 文件时，这里立刻跟上。
+        const rawSettings = loadSettingsAt(cfg.settingsFile);
+        if (rawSettings) applySettingsToCfg(cfg, rawSettings);
+        return send(res, 200, { ok: true, settings: publicSettings(cfg), settingsFile: cfg.settingsFile, instancesFile: SETTINGS_FILE, instanceName: cfg.instanceName ?? null, instancePort: cfg.instancePort ?? null, profileName: cfg.profileName ?? null, homeDir: cfg.homeDir ?? null, reloaded: rawSettings !== null });
       }
       if (method === 'POST' && path === '/api/undo/settings') {
         const body = await readJson(req);
@@ -242,6 +472,8 @@ const server = createServer(async (req, res) => {
         if (Array.isArray(body.pluginDirs)) cfg.pluginDirs = body.pluginDirs.map((s) => String(s).trim()).filter(Boolean);
         else if (typeof body.pluginDirs === 'string') cfg.pluginDirs = body.pluginDirs.split(/[;,]/).map((s) => s.trim()).filter(Boolean);
         if (body.sensitiveMode === 'redact' || body.sensitiveMode === 'keep') cfg.sensitiveMode = body.sensitiveMode;
+        // W73（#50）：对话头按钮档位（auto / full / compact），非法值不写入。
+        if (body.headerMode === 'auto' || body.headerMode === 'full' || body.headerMode === 'compact') cfg.headerMode = body.headerMode;
         if (typeof body.createDesktopShortcut === 'boolean') {
           cfg.createDesktopShortcut = body.createDesktopShortcut;
           if (body.createDesktopShortcut) void ensureDesktopShortcut(cfg).catch(() => { /* 尽力而为 */ });
@@ -258,13 +490,14 @@ const server = createServer(async (req, res) => {
           cfg.guardShortcutEnabled = body.guardShortcutEnabled;
           if (body.guardShortcutEnabled) void ensureGuardShortcut(cfg).catch(() => { /* 尽力而为 */ });
         }
-        // 关键：写回完整 publicSettings，绝不丢其他键（保证局内/局外同步）
-        await fs.mkdir(dirname(SETTINGS_FILE), { recursive: true });
-        await fs.writeFile(SETTINGS_FILE, JSON.stringify(publicSettings(cfg), null, 2), 'utf8');
+        // 关键：写回完整 publicSettings，绝不丢其他键（保证局内/局外同步）。
+        // 写目标实例自己的 settings 文件；合并原文以保留 instances/current 等非设置键。
+        await fs.mkdir(dirname(cfg.settingsFile), { recursive: true });
+        await fs.writeFile(cfg.settingsFile, JSON.stringify({ ...(loadSettingsAt(cfg.settingsFile) ?? {}), ...publicSettings(cfg) }, null, 2), 'utf8');
         await fs.mkdir(cfg.manualDir, { recursive: true });
         await fs.mkdir(cfg.autoDir, { recursive: true });
         const pruned = await pruneAuto(cfg, await listSnapshots(cfg));
-        return send(res, 200, { ok: true, settings: publicSettings(cfg), pruned });
+        return send(res, 200, { ok: true, settings: publicSettings(cfg), pruned, settingsFile: cfg.settingsFile, profileName: cfg.profileName ?? null });
       }
       if (method === 'GET' && path === '/api/undo/messages') {
         const msgs = (await listMessageOps(cfg)).map((m) => ({ id: m.id, messageId: m.messageId ?? null, files: m.files ?? 0, tools: m.tools ?? [], startedAt: m.startedAt ?? null, deleted: m.deleted ?? false }));
@@ -281,11 +514,95 @@ const server = createServer(async (req, res) => {
         const snap = await createSnapshot(cfg, 'manual', reason);
         return send(res, 200, { ok: true, id: snap.id, files: snap.files.length, reason });
       }
-      if (method === 'POST' && path === '/api/undo/undo') { return send(res, 200, { ok: true, ...await restore(cfg, 'undo') }); }
-      if (method === 'POST' && path === '/api/undo/redo') { return send(res, 200, { ok: true, ...await restore(cfg, 'redo') }); }
+      // W61：实例列表与切换。列表带出每个实例的 name/home/profile 与当前生效项；
+      // 切换时若有进行中的撤销/恢复/导出/导入，等它们结束再换（排队不拒绝）。
+      if (method === 'GET' && path === '/api/undo/instances') {
+        const s = await readServerSettings();
+        const list = normalizeInstances(s.instances);
+        const instances = await Promise.all(list.map((inst) => probeInstance(inst)));
+        const homeNow = cfg.homeDir ?? null;
+        const ownPort = server.address()?.port ?? null;
+        return send(res, 200, {
+          ok: true, instances,
+          current: typeof s.current === 'string' ? s.current : null,
+          currentProfile: typeof s.currentProfile === 'string' ? s.currentProfile : (cfg.profileName ?? null),
+          settingsFile: SETTINGS_FILE, homeDir: homeNow, port: ownPort,
+          profiles: listProfilesFor(homeNow),
+          effective: effectivePayload(ownPort),
+        });
+      }
+      if (method === 'POST' && path === '/api/undo/scan') {
+        // 扫描只产出建议，不自动写 settings；命令缺失/超时都返回空列表而不是抛栈。
+        const known = normalizeInstances((await readServerSettings()).instances);
+        let scanned;
+        try { scanned = await scanLocalInstances(); } catch (error) { scanned = { ok: false, durationMs: 0, scannedAt: new Date().toISOString(), suggestions: [], error: String(error?.message ?? error) }; }
+        return send(res, 200, { ok: true, ...scanned, known });
+      }
+      if (method === 'POST' && path === '/api/undo/instances') {
+        const body = await readJson(req);
+        // 实例列表的增删：只写 settings.instances/current，不动运行时实例。
+        if (body && typeof body.upsert === 'object' && body.upsert !== null) {
+          const up = body.upsert;
+          const name = typeof up.name === 'string' ? up.name.trim() : '';
+          const home = typeof up.home === 'string' ? up.home.trim() : '';
+          const portRaw = up.port;
+          const portGiven = !(portRaw === undefined || portRaw === null || portRaw === '');
+          const port = portGiven ? normalizePort(portRaw) : null;
+          if (!NAME_RE.test(name)) return send(res, 400, { ok: false, error: { code: 'bad-name', message: '实例名只允许字母、数字、点、下划线、短横线，长度 1-64' } });
+          if (portGiven && port === null) return send(res, 400, { ok: false, error: { code: 'bad-port', message: '端口必须是 1-65535 的整数：' + String(portRaw) } });
+          if (!home || !existsSync(home)) return send(res, 400, { ok: false, error: { code: 'bad-home', message: '实例 home 目录不存在：' + home } });
+          const s0 = await readServerSettings();
+          const list = normalizeInstances(s0.instances).filter((x) => x.name !== name);
+          list.push({ name, port, home, profile: typeof up.profile === 'string' && up.profile.trim() !== '' ? up.profile.trim() : null, url: typeof up.url === 'string' && up.url.trim() !== '' ? up.url.trim() : null });
+          await writeServerSettings({ ...s0, instances: list });
+          return send(res, 200, { ok: true, instances: list, current: typeof s0.current === 'string' ? s0.current : null, currentProfile: typeof s0.currentProfile === 'string' ? s0.currentProfile : null, settingsFile: SETTINGS_FILE });
+        }
+        if (typeof body?.remove === 'string') {
+          const name = body.remove.trim();
+          const s0 = await readServerSettings();
+          const list = normalizeInstances(s0.instances).filter((x) => x.name !== name);
+          const current = s0.current === name ? null : (typeof s0.current === 'string' ? s0.current : null);
+          await writeServerSettings({ ...s0, instances: list, current });
+          return send(res, 200, { ok: true, instances: list, current, currentProfile: typeof s0.currentProfile === 'string' ? s0.currentProfile : null, settingsFile: SETTINGS_FILE });
+        }
+        if (body?.reset === true) {
+          cfg = buildCfg(bootResolved, bootProfileResolved);
+          return send(res, 200, { ok: true, switched: true, reset: true, effective: effectivePayload(server.address()?.port ?? null), home: cfg.homeDir ?? null, profile: cfg.profileName ?? null, storeRoot: dirname(cfg.manualDir), settingsFile: cfg.settingsFile });
+        }
+        const s = await readServerSettings();
+        const list = normalizeInstances(s.instances);
+        const sw = body && typeof body.switch === 'object' && body.switch !== null ? body.switch : body;
+        const instanceName = typeof sw?.instance === 'string' ? sw.instance.trim() : '';
+        const homeArg = typeof sw?.home === 'string' ? sw.home.trim() : '';
+        // 只给 profile（顶栏 Profile 分段控件）时保持当前 home，不被 settings.current 带去别的实例。
+        const stayCurrent = instanceName === '' && homeArg === '';
+        const next = stayCurrent
+          ? { ok: true, home: cfg.homeDir ?? null, name: cfg.instanceName ?? null, port: cfg.instancePort ?? null, source: cfg.instanceSource ?? 'host' }
+          : resolveInstance({ instances: list, current: s.current, instance: instanceName || null, home: homeArg || null, profile: null, envHome: null });
+        if (!next.ok) return send(res, 400, { ok: false, error: { code: 'bad-instance', message: next.error, known: next.known ?? [] } });
+        const home = homeArg !== '' ? homeArg : next.home;
+        if (!home || !existsSync(home)) return send(res, 400, { ok: false, error: { code: 'bad-home', message: '实例 home 目录不存在：' + (home ?? '') } });
+        const hit = instanceName ? list.find((x) => x.name === instanceName) ?? null : null;
+        const wantedProfile = typeof sw?.profile === 'string' && sw.profile.trim() !== ''
+          ? sw.profile.trim()
+          : (hit?.profile ?? (typeof s.currentProfile === 'string' && s.currentProfile.trim() !== '' ? s.currentProfile.trim() : (cfg.profileName ?? 'web')));
+        if (!NAME_RE.test(wantedProfile)) return send(res, 400, { ok: false, error: { code: 'bad-profile', message: 'profile 名不合法：' + wantedProfile } });
+        const idle = await waitOpsIdle();
+        if (!idle) return send(res, 409, { ok: false, error: { code: 'busy', message: '有操作仍在进行，未切换实例；请等待当前操作结束后重试' } });
+        cfg = buildCfg({ ...next, home, port: hit?.port ?? next.port ?? null }, wantedProfile);
+        cfg.instanceName = next.name ?? hit?.name ?? null;
+        cfg.instanceSource = next.source ?? null;
+        cfg.instancePort = hit?.port ?? next.port ?? null;
+        if (next.source === 'settings' || next.name) {
+          await writeServerSettings({ ...s, current: hit?.name ?? next.name ?? s.current ?? null, currentProfile: wantedProfile });
+        }
+        return send(res, 200, { ok: true, switched: true, name: cfg.instanceName, source: cfg.instanceSource, effective: effectivePayload(server.address()?.port ?? null), home: cfg.homeDir ?? null, profile: cfg.profileName ?? null, storeRoot: dirname(cfg.manualDir), settingsFile: cfg.settingsFile, queued: false });
+      }
+      if (method === 'POST' && path === '/api/undo/undo') { return send(res, 200, { ok: true, ...await withOpLock(() => restore(cfg, 'undo')) }); }
+      if (method === 'POST' && path === '/api/undo/redo') { return send(res, 200, { ok: true, ...await withOpLock(() => restore(cfg, 'redo')) }); }
       if (method === 'POST' && path === '/api/undo/restore') {
         const body = await readJson(req);
-        const r = await restore(cfg, 'id', body?.snapshot_id, { syncDeps: body?.sync_deps === true });
+        const r = await withOpLock(() => restore(cfg, 'id', body?.snapshot_id, { syncDeps: body?.sync_deps === true }));
         return send(res, r.ok ? 200 : 400, { ok: r.ok, ...r });
       }
       if (method === 'POST' && path === '/api/undo/remove') {
@@ -304,18 +621,30 @@ const server = createServer(async (req, res) => {
       if (method === 'POST' && path === '/api/undo/export') {
         const body = await readJson(req);
         // M3 修复：把 WebUI 收集的密码透传给导出（否则加密开关是摆设）。
-        return send(res, 200, { ok: true, ...await exportSnapshots(cfg, body?.password ?? '') });
+        return send(res, 200, { ok: true, ...await withOpLock(() => exportSnapshots(cfg, body?.password ?? '')) });
       }
       if (method === 'POST' && path === '/api/undo/import') {
         const body = await readJson(req);
-        return send(res, 200, { ok: true, ...await importSnapshots(cfg, body?.path, body?.password ?? '') });
+        return send(res, 200, { ok: true, ...await withOpLock(() => importSnapshots(cfg, body?.path, body?.password ?? '')) });
       }
       if (method === 'POST' && path === '/api/undo/pick-dir') { return send(res, 200, { ok: true, ...await pickDirectory() }); }
       if (method === 'POST' && path === '/api/undo/pick-file') { return send(res, 200, { ok: true, ...await pickFile() }); }
       if (method === 'POST' && path === '/api/undo/safe-mode') {
         const body = await readJson(req);
-        const on = body?.on === true;
-        return send(res, 200, { ok: true, ...await safeModeSet(cfg, on) });
+        const action = typeof body?.action === 'string' ? body.action : (body?.on === true ? 'on' : body?.on === false ? 'off' : 'status');
+        const targetProfile = typeof body?.profile === 'string' && body.profile.trim() !== '' ? body.profile.trim() : (cfg.profileName ?? 'web');
+        const targetCfg = targetProfile === cfg.profileName ? cfg : cfgForProfile(cfg, targetProfile);
+        const targetIsDesktop = basename(String(targetCfg.profileDir ?? '')).trim().toLowerCase() === 'desktop';
+        if (action === 'on' || action === 'off') {
+          // 桌面 profile 默认拒动（W48）；显式 confirmDesktop 才允许离线写文件（先快照再改）。
+          if (action === 'on' && targetIsDesktop && body?.confirmDesktop !== true) {
+            return send(res, 200, { ok: false, reason: 'desktop-profile', needConfirm: true, profile: targetProfile, error: t('safe.err.desktop') });
+          }
+          const r = await safeModeSet(targetCfg, action === 'on', { allowDesktop: body?.confirmDesktop === true });
+          return send(res, 200, { ok: r.ok, ...r, profile: targetProfile, confirmedDesktop: targetIsDesktop && body?.confirmDesktop === true });
+        }
+        const st = await safeModeStatus(targetCfg);
+        return send(res, 200, { ok: true, active: st.active === true, enteredAt: st.enteredAt ?? null, profile: targetProfile });
       }
       if (method === 'GET' && path === '/api/undo/locale') {
         return send(res, 200, { ok: true, lang: process.env.DSH_UNDO_LANG ?? 'auto' });
@@ -354,7 +683,7 @@ async function main() {
   await fs.writeFile(stateTmp, JSON.stringify({ pid: process.pid, port, url: base, startedAt: new Date().toISOString() }, null, 2), 'utf8');
   await fs.rename(stateTmp, STATE_FILE);
   console.log(`\n  dsh-undo-savepoint 局外 WebUI`);
-  console.log(`  Profile: ${cfg.profileName}`);
+  console.log(`  Profile: ${cfg.profileName}  实例: ${cfg.instanceName ?? '本机'}  端口: ${cfg.instancePort ?? '—'}`);
   console.log(`  快照目录: ${LEGACY_ROOT}`);
   if (cfg.bootAlert?.crashed) {
     console.log(`  ⚠️ 上次 DSH 启动未完成（可能崩溃）。${cfg.bootAlert.lastGoodId ? `建议回退到快照 ${cfg.bootAlert.lastGoodId}。` : ''}${crashAdvice(cfg.bootAlert.crashReason ?? '')}`);

@@ -18,3 +18,8 @@
 --dsw-alias-state-error-primary
 --dsw-alias-state-success-primary
 --dsw-specific-tip
+# W62/W57 追加：在 DSH 0.2.1-rc.3 主题包（app.asar 内 dsh-client-ui-theme@0.2.1-rc.3，lib/client.js）逐条核实存在。
+--dsw-alias-bg-layer-2
+--dsw-alias-state-warn-primary
+--dsw-elevation-panel
+--dsw-elevation-prominent

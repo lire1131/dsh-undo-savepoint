@@ -52,7 +52,7 @@ function printReport(report) {
 const cfg = buildConfig({ profileName: args.profile ?? undefined, bootAlert: null });
 
 if (args.fix) {
-  const r = await runDoctorFix(cfg);
+  const r = await runDoctorFix(cfg, { desktopShortcut: true });
   if (args.json) {
     console.log(JSON.stringify(r, null, 2));
     process.exit(r.report.ok ? 0 : 1);
@@ -71,7 +71,7 @@ if (args.fix) {
   process.exit(r.report.ok ? 0 : 1);
 }
 
-const report = await runDoctor(cfg);
+const report = await runDoctor(cfg, { desktopShortcut: true });
 if (args.json) {
   console.log(JSON.stringify(report, null, 2));
   process.exit(report.ok ? 0 : 1);

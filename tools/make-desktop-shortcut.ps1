@@ -4,8 +4,10 @@
 # 自动定位插件目录（按顺序）：
 #   1) 本脚本自己就在插件的 tools 目录里（方式 B：clone + junction）；
 #   2) 常见安装位置（方式 A：dsh plugin add → profile 依赖树；方式 B：用户 node_modules）。
-# 找到后把 dsh-undo-savepoint-gui.bat 的快捷方式放到桌面，双击即可打开
-# 「DSH 撤销管理器」窗口（DSH 崩溃、启动不了时也能用）。
+# 找到后把 tools\launch-undo.bat 的快捷方式放到桌面，双击即可打开
+# 「DSH 撤销管理器」窗口（DSH 崩溃、启动不了时也能用）。快捷方式名与插件内创建逻辑一致
+# （dsh-undo-savepoint.lnk），目标同为 cmd.exe + /c launch-undo.bat；已存在且指向当前安装
+# 位置时跳过，指向别处时重写。
 #
 # 用法：
 #   双击 tools\make-desktop-shortcut.bat（推荐，会自动保持窗口）
@@ -45,14 +47,34 @@ if (-not $toolsDir) {
     exit 1
 }
 
-$guiBat = Join-Path $toolsDir 'dsh-undo-savepoint-gui.bat'
+$targetBat = Join-Path $toolsDir 'launch-undo.bat'
+if (-not (Test-Path -LiteralPath $targetBat)) { $targetBat = Join-Path $toolsDir 'dsh-undo-savepoint-gui.bat' }
 $desktop = [Environment]::GetFolderPath('Desktop')
-$lnk = Join-Path $desktop 'DSH撤销管理器.lnk'
+$lnk = Join-Path $desktop 'dsh-undo-savepoint.lnk'
 
 $ws = New-Object -ComObject WScript.Shell
+
+# W59：存在不等于正确。先读回现有快捷方式，目标与当前安装位置一致就跳过（保留用户自定义
+# 图标）；指向别的实例或旧安装位置时按当前安装位置重写。旧口径只判文件存在，快捷方式被改成
+# 指向隔离实例的启动脚本也发现不了。与插件内的创建逻辑同名同目标（cmd.exe + /c launch-undo.bat）。
+if (Test-Path -LiteralPath $lnk) {
+    $cur = $ws.CreateShortcut($lnk)
+    $sameTarget = ($cur.TargetPath -match '(?i)cmd(\.exe)?$') -and (($cur.Arguments -replace '"', '') -like ('*' + $targetBat + '*'))
+    $sameDir = ((($cur.WorkingDirectory) -replace '\\+$', '') -ieq (($toolsDir) -replace '\\+$', ''))
+    if ($sameTarget -and $sameDir) {
+        Write-Host "桌面快捷方式已指向当前安装位置，跳过：$lnk"
+        Read-Host '按回车退出'
+        exit 0
+    }
+    Write-Host "现有快捷方式指向别处（$($cur.TargetPath) $($cur.Arguments)），按当前安装位置重写。"
+}
+
 $sc = $ws.CreateShortcut($lnk)
-$sc.TargetPath = $guiBat                    # 双击快捷方式 → 启动 GUI（bat 自带隐藏窗口）
+$sc.TargetPath = 'cmd.exe'
+$sc.Arguments = '/c ""' + $targetBat + '""'
 $sc.WorkingDirectory = $toolsDir            # 工作目录设为 tools，保证相对路径解析正确
+$ico = Join-Path $toolsDir 'webui\logo.ico'
+if (Test-Path -LiteralPath $ico) { $sc.IconLocation = $ico + ',0' }
 $sc.Description = 'DSH 撤销管理器（dsh-undo-savepoint 局外工具）'
 $sc.Save()
 

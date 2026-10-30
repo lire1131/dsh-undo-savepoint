@@ -27,53 +27,112 @@
     <!-- 崩溃横幅 -->
     <div id="crash-banner" class="crash-banner hidden" role="alert"></div>
 
-    <!-- 顶栏 -->
+    <!-- 顶栏：品牌 + 全局工具 -->
     <header class="topbar">
       <div class="brand">
-        <span class="brand-mark">↶</span>
+        <span class="brand-mark" aria-hidden="true">↶</span>
         <div class="brand-text">
-          <div class="brand-title">dsh-undo-savepoint</div>
-          <div class="brand-sub hidden-sm" id="subtitle">配置 / 插件 / 健康 快照</div>
+          <div class="brand-title" data-i18n="appTitle">dsh-undo-savepoint</div>
+          <div class="brand-sub" id="subtitle" data-i18n="subtitle">配置 / 插件 / 健康 快照</div>
         </div>
       </div>
-      <div class="topbar-stats">
-        <div class="stat"><span id="stat-total" class="stat-num">–</span><span class="stat-label" id="lbl-total">快照</span></div>
-        <div class="stat"><span id="stat-profile" class="stat-num stat-num-sm">–</span><span class="stat-label">Profile</span></div>
-      </div>
-      <div class="topbar-actions">
-        <button class="btn btn-ghost" id="btn-lang" title="语言">🌐</button>
-        <button class="btn btn-ghost" id="btn-theme" title="主题">🌗</button>
-        <button class="btn btn-ghost" id="btn-refresh" title="刷新">⟳</button>
-        <button class="btn btn-primary" id="btn-snapshot">＋ 快照</button>
+      <div class="top-actions">
+        <button type="button" class="btn btn-icon" id="btn-lang" title="语言" aria-label="语言">🌐</button>
+        <button type="button" class="btn btn-icon" id="btn-theme" title="主题" aria-label="主题">🌗</button>
+        <button type="button" class="btn btn-icon" id="btn-refresh" title="刷新" aria-label="刷新">⟳</button>
+        <button type="button" class="btn btn-primary" id="btn-snapshot">＋ <span data-i18n="snapshot">创建快照</span></button>
       </div>
     </header>
 
-    <!-- 主操作区 -->
-    <main class="main">
-      <section class="action-strip">
-        <button class="btn btn-danger" id="btn-undo">↩ 撤销</button>
-        <button class="btn btn-success" id="btn-redo">↪ 重做</button>
-        <div class="spacer"></div>
-        <button class="btn" id="btn-safemode">🛡 安全模式</button>
-        <button class="btn" id="btn-doctor">🔍 诊断</button>
-        <button class="btn" id="btn-prune">🧹 清理</button>
-        <button class="btn" id="btn-export">⬇ 导出</button>
-        <button class="btn" id="btn-import">⬆ 导入</button>
-        <button class="btn" id="btn-message">💬 对话撤回</button>
-        <button class="btn" id="btn-settings">⚙ 设置</button>
-      </section>
+    <!-- 流程条：① 端口 → ② Profile → ③ 快照库 -->
+    <section class="flowbar" aria-label="实例 / Profile / 快照库">
+      <div class="flow-step">
+        <div class="flow-label"><span class="flow-index">①</span><span data-i18n="stepPort">端口</span></div>
+        <div class="flow-body">
+          <div class="inst-box" id="inst-box">
+            <select id="sel-instance" class="ctl ctl-select" aria-label="实例 / 端口" data-i18n-title="instance"></select>
+            <span class="inst-static" id="inst-static">–</span>
+          </div>
+          <span class="badge badge-legacy badge-dot hidden" id="inst-api-badge">旧版接口</span>
+        </div>
+      </div>
+      <div class="flow-arrow" aria-hidden="true">→</div>
+      <div class="flow-step">
+        <div class="flow-label"><span class="flow-index">②</span><span data-i18n="stepProfile">Profile</span></div>
+        <div class="flow-body">
+          <div class="segmented" id="profile-seg" role="group" aria-label="Profile"></div>
+        </div>
+      </div>
+      <div class="flow-arrow" aria-hidden="true">→</div>
+      <div class="flow-step flow-store">
+        <div class="flow-label"><span class="flow-index">③</span><span data-i18n="stepStore">快照库</span></div>
+        <div class="flow-body">
+          <div class="flow-line">
+            <span class="badge hidden" id="store-badge">–</span>
+            <span class="flow-count" id="store-count">–</span>
+          </div>
+          <div class="flow-paths">
+            <span class="path-label">home</span><span class="path-val" id="flow-home">–</span>
+            <span class="path-label">settings</span><span class="path-val" id="flow-settings">–</span>
+          </div>
+        </div>
+      </div>
+    </section>
 
-      <section class="timeline" id="timeline">
-        <div class="timeline-loading" id="timeline-loading">加载中…</div>
+    <!-- 状态条：在线 / 离线 / 旧版接口 / 共享库 + 操作层级 -->
+    <section class="statusbar">
+      <div class="status-badges" id="status-badges"></div>
+      <div class="status-meta" id="status-meta"></div>
+      <div class="status-actions">
+        <button type="button" class="btn" id="btn-undo">↩ <span data-i18n="undo">撤销</span></button>
+        <button type="button" class="btn" id="btn-redo">↪ <span data-i18n="redo">重做</span></button>
+        <button type="button" class="btn" id="btn-settings">⚙ <span data-i18n="settings">设置</span></button>
+        <details class="more" id="more-menu">
+          <summary class="btn" id="btn-more"><span data-i18n="more">更多</span> <span class="caret" aria-hidden="true">▾</span></summary>
+          <div class="menu" role="menu">
+            <button type="button" class="menu-item" id="btn-prune" role="menuitem">🧹 <span data-i18n="prune">清理过期快照</span></button>
+            <button type="button" class="menu-item" id="btn-export" role="menuitem">⬇ <span data-i18n="export">导出</span></button>
+            <button type="button" class="menu-item" id="btn-import" role="menuitem">⬆ <span data-i18n="import">导入</span></button>
+            <button type="button" class="menu-item" id="btn-doctor" role="menuitem">🔍 <span data-i18n="diagnose">诊断</span></button>
+            <button type="button" class="menu-item" id="btn-message" role="menuitem">💬 <span data-i18n="msgBtn">对话撤回</span></button>
+          </div>
+        </details>
+        <button type="button" class="btn btn-warn" id="btn-safemode">🛡 <span id="safemode-label">安全模式</span></button>
+      </div>
+    </section>
+
+    <!-- 时间线 -->
+    <main class="main">
+      <section class="toolbar" aria-label="筛选">
+        <div class="search-box">
+          <span class="search-icon" aria-hidden="true">⌕</span>
+          <input id="search" type="search" autocomplete="off" data-i18n-ph="searchPlaceholder" aria-label="搜索">
+        </div>
+        <select id="kind-filter" class="ctl" aria-label="快照类型">
+          <option value="all" data-i18n="filterAll">全部类型</option>
+          <option value="manual" data-i18n="kindManual">手动</option>
+          <option value="auto" data-i18n="kindAuto">自动</option>
+          <option value="pre-restore" data-i18n="kindPre">撤销前</option>
+          <option value="baseline" data-i18n="kindBaseline">基线</option>
+        </select>
+        <label class="switch-row" title="显示共享库全部">
+          <input type="checkbox" id="show-shared">
+          <span data-i18n="showSharedAll">显示共享库全部</span>
+        </label>
+        <span class="switch-hint" data-i18n="showSharedHint">关闭时只看当前 profile 与归属未知；开启后显示全部。</span>
+        <span class="toolbar-count" id="list-count"></span>
+        <span class="sel-count hidden" id="sel-count"></span>
+        <button type="button" class="btn btn-danger btn-sm hidden" id="btn-bulk-del" data-i18n="deleteSelected">删除所选</button>
+        <button type="button" class="btn btn-ghost btn-sm hidden" id="btn-clear-sel" data-i18n="clearSelection">清除选择</button>
       </section>
+      <section class="timeline" id="timeline" aria-live="polite"></section>
     </main>
 
-    <!-- 详情/操作提示 -->
-    <div id="toast" class="toast hidden"></div>
+    <div id="toast" class="toast hidden" role="status"></div>
 
-    <!-- 弹出层：diff / 设置 / 确认 -->
+    <!-- 弹出层：设置 / 对比 / 确认 / 诊断 / 导入导出 -->
     <div id="overlay" class="overlay hidden">
-      <div class="panel" id="panel"></div>
+      <div class="panel" id="panel" role="dialog" aria-modal="true"></div>
     </div>
   </div>
 

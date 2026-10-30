@@ -3,6 +3,7 @@
   "version": "0.5.0",
   "description": "DSH undo/rollback system: snapshot config files on change, undo/redo the last action from the WebUI or by chat, and roll back broken plugin trees without reinstalling. Works even when DSH fails to boot (offline CLI + GUI).",
   "type": "module",
+  "icon": "./tools/webui/logo.png",
   "main": "lib/index.js",
   "exports": {
     ".": "./lib/index.js",
@@ -11,11 +12,11 @@
     "./package.json": "./package.json"
   },
   "scripts": {
-    "test": "node tools/check-size.mjs && node tools/check-version.mjs && node tools/check-routes.mjs && node tools/smoke-test.mjs && node tools/undo-server-smoke.mjs && node tools/home-resolution-test.mjs && node tools/e2e-watch.mjs",
+    "test": "node tools/check-size.mjs && node tools/check-client-exports.mjs && node tools/check-version.mjs && node tools/check-routes.mjs && node tools/smoke-test.mjs && node tools/host-api-smoke.mjs && node tools/undo-server-smoke.mjs && node tools/home-resolution-test.mjs && node tools/e2e-watch.mjs",
     "prepublishOnly": "npm test"
   },
   "engines": {
-    "dsh": ">=0.0.1-0 || >=0.1.0-rc.2 || >=0.1.1-rc.1 || >=0.1.2-alpha.2 || >=0.1.2-rc.1 || >=0.1.5-rc.1 || >=0.1.5-rc.2 || >=0.2.0-rc.2",
+    "dsh": ">=0.0.1-0 || >=0.1.0-rc.2 || >=0.1.1-rc.1 || >=0.1.2-alpha.2 || >=0.1.2-rc.1 || >=0.1.5-rc.1 || >=0.1.5-rc.2 || >=0.2.0-rc.2 || >=0.2.1-0",
     "node": ">=20.0.0"
   },
   "dsh": {

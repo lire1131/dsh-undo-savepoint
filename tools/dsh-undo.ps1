@@ -15,6 +15,9 @@
 #   .\dsh-undo.ps1 scan [-Fix] [-Label <home>]                 # scan/repair DSH session files (v0.3.8; v0.4.2 adds synthetic-closer seq overlap repair)
 #   .\dsh-undo.ps1 doctor [-Fix] [-Label <profile>]            # preflight check before boot: manifest/bundles/junction/loader-id (v0.4.8; -Fix repairs what it can)
 #
+# Profile: DSH_UNDO_PROFILE selects the profile for this run, but a profileName
+# in settings.json wins when both are set (the offline tools cannot see argv).
+#
 # Snapshot stores: D:\dsh\undo-snapshots\manual and \auto (shared with the
 # dsh-undo DSH plugin; legacy flat snapshots are read too).
 

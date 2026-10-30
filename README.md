@@ -143,9 +143,9 @@ mklink /J "<你的DSH安装>\node_modules\dsh-undo-savepoint" "D:\dsh\plugins\ds
 
 ## 支持范围（DSH 版本）
 
-插件安装与 profile 启动时会按本包声明的 DSH 范围核对运行时（`dsh --version` 显示的那个）版本，不匹配即拒绝加载。`package.json` 的 `engines.dsh` 是一串并列范围，覆盖 `0.1.x` 的历次声明，末段为 `>=0.2.0-rc.2`。
+插件安装与 profile 启动时会按本包声明的 DSH 范围核对运行时（`dsh --version` 显示的那个）版本，不匹配即拒绝加载。`package.json` 的 `engines.dsh` 是一串并列范围，覆盖 `0.1.x` 与 `0.2.x` 的历次声明，末段为 `>=0.2.1-0`。
 
-已验证：桌面版 DSH 0.2.0-rc.2（cordis 4.0.4 全 peer 树），同时覆盖 `web` profile 与命令行、局外 WebUI、局外 CLI。工程内四道门禁零失败，覆盖 CLI 与 Web 端。
+已验证：桌面版 DSH 0.2.0-rc.2（cordis 4.0.4 全 peer 树）与 0.2.1-rc.3（cordis 4.0.5 全 peer 树），两版都覆盖 `web` profile 与命令行、局外 WebUI、局外 CLI。工程内四道门禁零失败，覆盖 CLI 与 Web 端。
 
 已验证：隔离 Electron 实例（desktop profile）的安装、GUI 工具回执、安全模式拒动与卸载。
 

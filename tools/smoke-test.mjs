@@ -1392,10 +1392,11 @@ console.log('== B4b. patch manifest: multi-version substrings + client declarati
   check(pkg.engines.dsh.includes('0.1.2-rc.1') && pkg.engines.dsh.includes('0.1.5-rc.1') && pkg.engines.dsh.includes('0.1.5-rc.2'), 'B4b: engines.dsh covers 0.1.2-rc.1, 0.1.5-rc.1 and 0.1.5-rc.2');
   // W42：engines 追加 0.2.0-rc.2 段（维持 OR 串风格，不重构）。
   const dshSegs = String(pkg.engines.dsh).split('||').map((s) => s.trim());
-  const w42Base = ['>=0.0.1-0', '>=0.1.0-rc.2', '>=0.1.1-rc.1', '>=0.1.2-alpha.2', '>=0.1.2-rc.1', '>=0.1.5-rc.1', '>=0.1.5-rc.2'];
+  // W56：末段推进到 0.2.1 线，历史八段逐字保留（rc.3 适配）。
+  const w42Base = ['>=0.0.1-0', '>=0.1.0-rc.2', '>=0.1.1-rc.1', '>=0.1.2-alpha.2', '>=0.1.2-rc.1', '>=0.1.5-rc.1', '>=0.1.5-rc.2', '>=0.2.0-rc.2'];
   check(
-    typeof pkg.engines.dsh === 'string' && dshSegs[dshSegs.length - 1] === '>=0.2.0-rc.2' && JSON.stringify(dshSegs.slice(0, -1)) === JSON.stringify(w42Base),
-    'W42: engines.dsh 末段为 >=0.2.0-rc.2 且原有七段逐字保留（OR 串未重构）',
+    typeof pkg.engines.dsh === 'string' && dshSegs[dshSegs.length - 1] === '>=0.2.1-0' && JSON.stringify(dshSegs.slice(0, -1)) === JSON.stringify(w42Base),
+    'W42: engines.dsh 末段为 >=0.2.1-0 且原有八段逐字保留（OR 串未重构）',
   );
   check(pkg.version === '0.5.0', 'W42: package.json version 为 0.5.0（stable 定稿）');
   const readmes42 = [
@@ -1415,6 +1416,26 @@ console.log('== B4b. patch manifest: multi-version substrings + client declarati
     !/\b[A-Za-z]:(?:[\\/])Users[\\/]/i.test(indexText) && !/\b[A-Za-z]:(?:[\\/])Users[\\/]/i.test(clientText),
     'B4b: lib 下不含本机用户目录绝对路径（解析锚点只认 DSH_ROOT 与 DSH_HOME）',
   );
+  // W56：DSH 0.2.1-rc.3 适配声明面。核对依据：本机运行时清单 app.asar/dsh/package.json 里
+  // 四条 inject 包名逐条存在且版本同为 0.2.1-rc.3，差异表为空；`dsh --version` 实测 0.2.1-rc.3。
+  // 断言只认包自身声明与注册面，不认本机安装路径（换机器仍可跑）。
+  check(
+    typeof pkg.engines.dsh === 'string' && dshSegs.length === 9 && dshSegs[dshSegs.length - 1] === '>=0.2.1-0',
+    'W56: engines.dsh 共九段且末段为 >=0.2.1-0（新增 0.2.1 线，历史段未删）',
+  );
+  check(
+    pkg.dsh.client.inject.length === 4 && new Set(pkg.dsh.client.inject).size === 4
+      && pkg.dsh.client.inject.every((n) => /^@deepseek-ai\/dsh-client[-\w]*$/.test(n)),
+    'W56: dsh.client.inject 四条均为 @deepseek-ai/dsh-client* 全包名且互不重复',
+  );
+  const standaloneText = await readFile(fileURLToPath(new URL('../tools/undo-server.mjs', import.meta.url)), 'utf8');
+  const statusRoute = /method\s*===\s*'GET'\s*&&\s*path\s*===\s*'\/api\/undo\/status'/;
+  check(
+    statusRoute.test(indexText) && statusRoute.test(standaloneText),
+    'W56: 局内与局外都注册了 /api/undo/status（rc.3 面板与离线工具都靠它取状态）',
+  );
+  const documentedTools = ['undo_list', 'undo_restore', 'undo_diff', 'undo_message', 'undo_message_list', 'undo_compact', 'undo_snapshot', 'undo_scan', 'undo_safe_mode', 'undo_doctor', 'undo_export', 'undo_import', 'undo_prune', 'undo_recent', 'undo_note'];
+  check(documentedTools.every((n) => tools.has(n)), 'W56: rc.3 上文档化工具面全部注册（15 个），无静默丢工具');
 }
 
 console.log('== 38. B6: undo_scan — session health scan, fixable repair, corrupt isolation (v0.3.8) ==');
@@ -1649,6 +1670,148 @@ await cleanup(root30);
   check(Object.keys(jsons.zh).length === Object.keys(jsons.en).length, 'lib/i18n zh/en key counts match (' + Object.keys(jsons.zh).length + ' vs ' + Object.keys(jsons.en).length + ')');
   const jsonOnly = Object.keys(jsons.zh).filter((k) => !(k in jsons.en));
   check(jsonOnly.length === 0, 'lib/i18n zh/en key sets identical (extra zh: ' + (jsonOnly.join(', ') || 'none') + ')');
+}
+
+// ── W53：面板 profile 标签改实时值（issue #49-B）──────────────────────────────
+// #49-B 的根因：面板副标题取最新快照 manifest 里冻结的 profile，而当前 profile 有独立的实时
+// 解析，两者分叉。修复点在三层：两端 status 带实时字段、面板优先取它、表格加一列快照归属。
+// 断言走源码级检查（面板是 bundle，不可直接 import），实跑覆盖放在 undo-server-smoke 里。
+{
+  const repoRoot53 = fileURLToPath(new URL('..', import.meta.url));
+  const idx53 = await readFile(join(repoRoot53, 'lib', 'index.js'), 'utf8');
+  const srv53 = await readFile(join(repoRoot53, 'tools', 'undo-server.mjs'), 'utf8');
+  const cli53 = await readFile(join(repoRoot53, 'lib', 'client.js'), 'utf8');
+  const statusResp = (src) => {
+    const at = src.indexOf("path === '/api/undo/status'");
+    return at < 0 ? '' : src.slice(at, src.indexOf('});', at) + 3);
+  };
+  check(/profileName:\s*cfg\.profileName\s*\?\?\s*null/.test(statusResp(idx53)) && /profileSource:\s*cfg\.profileSource\s*\?\?\s*null/.test(statusResp(idx53))
+    && /profileName:\s*cfg\.profileName\s*\?\?\s*null/.test(statusResp(srv53)) && /profiles:\s*\[cfg\.profileName\]/.test(statusResp(srv53)),
+    'W53: 局内与局外 /api/undo/status 都带实时 profileName/profileSource，局外 profiles 数组保留');
+  // 空库也显示：面板的 profile 取自 status，不依赖 snaps 是否为空；缺字段才回落 snaps[0].profile
+  check(cli53.includes('const [profileNow, setProfileNow]') && cli53.includes('setProfileNow(st && st.ok && st.profileName')
+    && /const profile = profileNow && profileNow\.name \? profileNow\.name : \(snaps && snaps\.length \? \(snaps\[0\]\.profile \|\| null\) : null\)/.test(cli53),
+    'W53: 面板副标题优先取 status 实时值（空库同样显示），老服务端缺字段时回落首条快照归属');
+  const head53 = cli53.includes('children: t("panel.col.profile")');
+  const row53 = cli53.includes('children: s.profile || "—"');
+  check(head53 && row53, 'W53: 表格新增「快照归属」列（列头与逐行都填）');
+}
+
+// ── W57：P1 视觉一致性（颜色收敛 + 焦点环 + 间距阶梯）─────────────────────────
+// 收敛前 46 处硬编码（19 处 hex、27 处 rgba），其中 40 处是 var(--token, 兜底值) 的兜底；
+// 兜底一律删掉（14 个 token 在 0.2.x 主题包里都在，不再是「拼错靠兜底盖住」的状态），
+// 4 处语义半透明色改 color-mix 派生，剩下 2 处投影值没有对应 token，进白名单。
+{
+  const cli57 = await readFile(fileURLToPath(new URL('../lib/client.js', import.meta.url)), 'utf8');
+  const lits57 = [...cli57.matchAll(/#[0-9a-fA-F]{3,8}\b|rgba?\([^)]*\)/g)].map((m) => m[0]);
+  // 白名单只有两项：面板与差异浮层的投影（清单里没有阴影 token，改用 color-mix 会把阴影染成文字色）
+  const WL57 = ['rgba(0,0,0,.35)', 'rgba(0,0,0,.4)'];
+  const offList57 = lits57.filter((x) => !WL57.includes(x));
+  check(lits57.length <= 12 && offList57.length === 0,
+    `W57: 硬编码颜色收敛到 12 处以内且全部在白名单内（46 -> ${lits57.length}，越界：${offList57.join(',') || '无'}）`);
+  // 焦点可见：所有可交互类都要有 :focus-visible 规则
+  const interactive57 = ['u_btn', 'u_badge', 'u_rowbtn', 'u_browseBtn', 'u_save', 'u_close', 'u_list', 'u_icon', 'u_statePrimary'];
+  const missingFocus57 = interactive57.filter((c) => !new RegExp(`\\.${c}:focus-visible`).test(cli57));
+  check(missingFocus57.length === 0, `W57: 交互元素都有可见焦点环（缺：${missingFocus57.join(',') || '无'}）`);
+  // 间距阶梯：结构类的外距/内距/行高/圆角一律落在 4 的倍数上
+  const spaced57 = ['u_actions', 'u_btn', 'u_head', 'u_toolbar', 'u_tbody', 'u_rowbtn', 'u_row', 'u_foot', 'u_close', 'u_save', 'u_keyInput', 'u_state'];
+  const badScale57 = [];
+  for (const cls of spaced57) {
+    const rule = new RegExp(`\\.${cls}\\{([^}]*)\\}`).exec(cli57);
+    if (!rule) { badScale57.push(`${cls}:missing`); continue; }
+    for (const decl of rule[1].matchAll(/(?:padding|gap|height|border-radius):([^;}]+)/g)) {
+      for (const num of decl[1].matchAll(/(\d+)px/g)) {
+        if (Number(num[1]) % 4 !== 0) badScale57.push(`${cls}:${decl[0].trim()}`);
+      }
+    }
+  }
+  check(badScale57.length === 0, `W57: 结构类间距全部落在 4 的倍数阶梯（越界：${badScale57.join(';') || '无'}）`);
+}
+
+// ── W58：P2 信息架构（状态条 / 卡片分组 / 搜索 / 批量 / 键盘 / 分批）─────────────
+// 面板仍是 bundle，不可 import，断言走源码级；真实渲染与键盘手感留到真机验收清单。
+{
+  const cli58 = await readFile(fileURLToPath(new URL('../lib/client.js', import.meta.url)), 'utf8');
+  check(cli58.includes('"data-undo-status": true')
+    && ['status.profile', 'status.sensitive', 'status.size', 'status.last'].every((k) => cli58.includes(`t("${k}")`)),
+    'W58: 顶部状态条四项齐全（profile 与来源、敏感模式、快照数与占用、最近快照时间）');
+  check(/function localDayKey\(v\)[\s\S]{0,400}getFullYear\(\)/.test(cli58) && !/toISOString\(\)\.slice\(0, ?10\)/.test(cli58),
+    'W58: 分组键走本地日期（与 W55 时间线同口径，不截 ISO 串）');
+  check(/function filterSnaps\(list, q\)/.test(cli58) && /\[s\.kind, s\.location, s\.reason, s\.profile\]/.test(cli58)
+    && cli58.includes('setQuery("")'),
+    'W58: 搜索按 kind/位置/原因/归属过滤，且有清空路径（命中与清空各一条）');
+  check(/const deleteSelected = async \(\) => \{[\s\S]{0,320}window\.confirm\(t\("panel\.confirm\.batch"/.test(cli58),
+    'W58: 批量删除走二次确认（取消即不删）');
+  check(/const onCardKey = \(e, s\) => \{[\s\S]{0,520}e\.key === "Enter"[\s\S]{0,320}e\.key === "Delete"[\s\S]{0,520}ArrowDown/.test(cli58)
+    && cli58.includes('tabIndex: 0') && cli58.includes('onKeyDown: (e) => onCardKey(e, s)'),
+    'W58: 键盘可达（方向键上下、Enter 开 diff、Delete 删除需确认）');
+  check(/const PAGE_SIZE = 200;/.test(cli58) && /const shown = visible\.slice\(pageSafe \* PAGE_SIZE, pageSafe \* PAGE_SIZE \+ PAGE_SIZE\)/.test(cli58)
+    && cli58.includes('children: shown.map((s) =>') && cli58.includes('const shownGroups = groupSnaps(shown);')
+    && cli58.includes('children: shownGroups.map((g) =>'),
+    'W58: 超过 200 条按批渲染（表格与卡片都只渲染当前批）');
+}
+
+// ── W61：多实例（多 home）快照切换 ──────────────────────────────────────────
+// 裁决逻辑做成纯函数，这里直接钉：列表归一化与持久化、切换后 store 根、坏 home 报错、
+// 未配置时行为不变、双实例互不串味。
+{
+  const core = await import('../lib/core.mjs');
+  const { normalizeInstances, resolveInstance, storeRootsFor } = await import('../lib/instances.mjs');
+  // 1) 列表可持久化并读回：形状不对的项丢掉，重名只留第一条
+  const raw61 = [
+    { name: 'desk', home: 'C:\\h\\desktop', profile: 'desktop', url: 'http://127.0.0.1:1' },
+    { name: 'bad name', home: 'C:\\h\\x' },
+    { home: 'C:\\h\\nohome' },
+    { name: 'desk', home: 'C:\\h\\dup' },
+    { name: 'web', home: 'C:\\h\\web' },
+  ];
+  const once61 = normalizeInstances(raw61);
+  const back61 = normalizeInstances(JSON.parse(JSON.stringify(once61)));
+  check(once61.length === 2 && once61[0].name === 'desk' && once61[1].name === 'web'
+    && JSON.stringify(back61) === JSON.stringify(once61),
+    'W61: 实例列表归一化后可持久化读回（坏项丢弃、重名只留第一条）');
+  // 2) 未配置 instances 时行为与现在完全一致
+  const none61 = resolveInstance({ envHome: '' });
+  check(none61.ok === true && none61.home === null && none61.source === 'default',
+    'W61: 不配置 instances 时裁决回落到默认行为，老用户零感知');
+  // 3) 切换实例后 store 根跟着换
+  const res61 = resolveInstance({ instances: once61, instance: 'desk', envHome: '' });
+  const rootsDesk61 = storeRootsFor(res61.home);
+  const rootsWeb61 = storeRootsFor(once61[1].home);
+  const cfgDesktop61 = core.buildConfig({ profileName: res61.profile, homeDir: res61.home, ...rootsDesk61, pluginDirs: [] });
+  const cfgWeb61 = core.buildConfig({ profileName: 'web', homeDir: once61[1].home, ...rootsWeb61, pluginDirs: [] });
+  check(res61.ok && res61.source === 'cli-instance' && res61.profile === 'desktop'
+    && cfgDesktop61.manualDir.startsWith('C:\\h\\desktop') && cfgDesktop61.autoDir.startsWith('C:\\h\\desktop')
+    && cfgWeb61.autoDir.startsWith('C:\\h\\web') && cfgDesktop61.autoDir !== cfgWeb61.autoDir,
+    'W61: 切到某实例后 store 根随之落到该实例 home 下（单传 homeDir 搬不动快照库，必须显式重绑）');
+  // 4) --home 指向不存在目录：启动器给明确报错并以非零码退出，不崩
+  const { execFile: execFile61 } = await import('node:child_process');
+  const badHome61 = join(tmpdir(), 'dsh-undo-w61-does-not-exist-' + Date.now());
+  const out61 = await new Promise((resolve) => {
+    execFile61(process.execPath, [join(dirname(fileURLToPath(import.meta.url)), 'undo-server.mjs'), '--home', badHome61, '--no-open'],
+      { timeout: 15000, env: { ...process.env, DSH_UNDO_SETTINGS: join(tmpdir(), 'dsh-undo-w61-settings.json') } },
+      (err, stdout, stderr) => resolve({ code: err ? (err.code ?? 1) : 0, text: String(stdout ?? '') + String(stderr ?? '') }));
+  });
+  check(out61.code === 2 && /home 目录不存在/.test(out61.text),
+    `W61: --home 指向不存在的目录时明确报错并以 2 退出（实得 code=${out61.code}）`);
+  // 5) 双实例夹具：各读各的快照，不串
+  const root61 = await mkdtemp(join(tmpdir(), 'dsh-undo-w61-'));
+  const mk61 = async (tag) => {
+    const home = join(root61, tag);
+    const prof = join(home, 'profiles', 'web');
+    await mkdir(prof, { recursive: true });
+    await writeFile(join(prof, 'package.json'), '{"name":"p","dependencies":{}}\n');
+    await writeFile(join(prof, 'cordis.patch.yml'), '# patch\n[]\n');
+    return core.buildConfig({ profileName: 'web', homeDir: home, profileDir: prof, ...storeRootsFor(home), pluginDirs: [] });
+  };
+  const cfgA61 = await mk61('a');
+  const cfgB61 = await mk61('b');
+  const snapA61 = await core.createSnapshot(cfgA61, 'manual', 'w61-a-only');
+  const listA61 = await core.listSnapshots(cfgA61);
+  const listB61 = await core.listSnapshots(cfgB61);
+  check(listA61.some((s) => s.id === snapA61.id) && listB61.every((s) => s.id !== snapA61.id),
+    'W61: 双实例夹具各读各的快照库，不串味');
+  await rm(root61, { recursive: true, force: true });
 }
 
 // ── V0.4.0 P6：消息级撤销核心单测（工厂函数直连，不依赖 DSH 事件）────────────
@@ -1956,7 +2119,124 @@ await cleanup(root30);
   // 3) 关闭开关 -> disabled
   const dis = await core.ensureDesktopShortcut({ createDesktopShortcut: false }, { desktopDir: droot, pluginRoot: repoRoot, force: true });
   check(dis.action === 'disabled', 'desktop: createDesktopShortcut=false disables');
+  // 4) W59：存在不等于正确。目标一致的快捷方式不改写（用户自定义图标保留），指向别处时按
+  // 当前安装位置重写，doctor 报一条可修的 warn。旧口径只判文件存在，指向隔离实例也发现不了。
+  if (process.platform === 'win32' && dres.ok && (dres.action === 'created' || dres.action === 'exists')) {
+    const { execFile } = await import('node:child_process');
+    const ps59 = (script) => new Promise((resolve) => execFile('powershell.exe', ['-NoProfile', '-NonInteractive', '-Command', script], { timeout: 30000, windowsHide: true }, (err, stdout) => resolve({ ok: !err, out: String(stdout ?? '') })));
+    const lnk59 = join(droot, 'dsh-undo-savepoint.lnk');
+    const customIco = join(droot, 'custom.ico');
+    await writeFile(customIco, 'x');
+    await ps59(`$ws=New-Object -ComObject WScript.Shell; $s=$ws.CreateShortcut('${lnk59}'); $s.IconLocation='${customIco},0'; $s.Save();`);
+    const keep59 = await core.ensureDesktopShortcut({ createDesktopShortcut: true }, { desktopDir: droot, pluginRoot: repoRoot, force: true });
+    const icon59 = await ps59(`$ws=New-Object -ComObject WScript.Shell; $s=$ws.CreateShortcut('${lnk59}'); Write-Output $s.IconLocation`);
+    check(keep59.action === 'exists' && icon59.out.includes('custom.ico'),
+      'W59: a shortcut that already matches is left alone and keeps the custom icon');
+    const wrongBat = join(droot, 'other.bat');
+    await writeFile(wrongBat, '@echo off\n');
+    await ps59(`$ws=New-Object -ComObject WScript.Shell; $s=$ws.CreateShortcut('${lnk59}'); $s.TargetPath='cmd.exe'; $s.Arguments='/c ""${wrongBat}""'; $s.WorkingDirectory='${droot}'; $s.Save();`);
+    const repaired59 = await core.ensureDesktopShortcut({ createDesktopShortcut: true }, { desktopDir: droot, pluginRoot: repoRoot, force: true });
+    const target59 = await ps59(`$ws=New-Object -ComObject WScript.Shell; $s=$ws.CreateShortcut('${lnk59}'); Write-Output ($s.TargetPath + ' ' + $s.Arguments)`);
+    check(repaired59.action === 'repaired' && /launch-undo\.bat/i.test(target59.out),
+      'W59: a shortcut pointing elsewhere is rewritten for the current installation');
+    // doctor 侧：再把目标改错，doctor 必须检出为可修 warn
+    await ps59(`$ws=New-Object -ComObject WScript.Shell; $s=$ws.CreateShortcut('${lnk59}'); $s.TargetPath='cmd.exe'; $s.Arguments='/c ""${wrongBat}""'; $s.WorkingDirectory='${droot}'; $s.Save();`);
+    const w59root = await mkdtemp(join(tmpdir(), 'dsh-undo-w59-'));
+    const w59home = join(w59root, 'home');
+    const w59prof = join(w59home, 'profiles', 'web');
+    await mkdir(w59prof, { recursive: true });
+    await writeFile(join(w59prof, 'package.json'), '{"name":"dsh-profile-web","dependencies":{}}\n');
+    const cfg59 = core.buildConfig({ profileName: 'web', homeDir: w59home, profileDir: w59prof, manualDir: join(w59home, 'undo-snapshots', 'manual'), autoDir: join(w59home, 'undo-snapshots', 'auto'), pluginDirs: [] });
+    // 测试全局设了 DSH_UNDO_NO_DESKTOP=1（不碰真实桌面），本用例要验审计本身，临时摘掉再还原
+    const noDesktop59 = process.env.DSH_UNDO_NO_DESKTOP;
+    delete process.env.DSH_UNDO_NO_DESKTOP;
+    let rep59;
+    try { rep59 = await core.runDoctor(cfg59, { desktopDir: droot, desktopShortcut: true }); }
+    finally { if (noDesktop59 !== undefined) process.env.DSH_UNDO_NO_DESKTOP = noDesktop59; }
+    check(rep59.checks.some((c) => c.code === 'pre-desktop-shortcut' && c.level === 'warn' && c.fixable === true),
+      'W59: doctor reports a mismatched desktop shortcut as a fixable warn');
+    await rm(w59root, { recursive: true, force: true });
+  } else {
+    console.log(`  skip - W59 desktop shortcut audit needs Windows COM (platform ${process.platform})`);
+    pass += 3;
+  }
   await rm(droot, { recursive: true, force: true });
+}
+
+// ── #51 W72: settings.profileName rebuilds the PowerShell spec table ─────────
+// The offline tools build $script:UndoFileSpecs at load time, so
+// settings.profileName used to leave the 5 profile entries on profiles\web.
+// The static half (UTF-8 BOM + marker/rebuild/probe) runs everywhere; the
+// behavior half needs Windows PowerShell 5.1.
+{
+  const libW72Path = join(repoRoot, 'tools', 'dsh-undo-savepoint-lib.ps1');
+  const libW72Buf = await readFile(libW72Path);
+  const libW72Text = libW72Buf.toString('utf8');
+  // PowerShell 5.1 decodes a BOM-less script with the ANSI code page: every
+  // non-ASCII character becomes mojibake and dot-sourcing dies (issue #51).
+  // Keep the byte check here so a ps1 edit that strips the BOM breaks next to
+  // the behavior it protects (the repo encoding audit covers it globally too).
+  const hasBomW72 = libW72Buf.length >= 3 && libW72Buf[0] === 0xEF && libW72Buf[1] === 0xBB && libW72Buf[2] === 0xBF;
+  check(
+    hasBomW72
+      && /\$script:UndoSpecRoot = \$null/.test(libW72Text)
+      && /if \(\$script:UndoSpecRoot -ne \$script:UndoProfileRoot\) \{ Initialize-UndoSpec \}/.test(libW72Text)
+      && /function Get-UndoDefaultProfile/.test(libW72Text),
+    'W70/W71: lib.ps1 keeps UTF-8 BOM + spec-root marker + rebuild call + default-profile probe'
+  );
+
+  if (process.platform === 'win32') {
+    const { execFile } = await import('node:child_process');
+    const homeW72 = await mkdtemp(join(tmpdir(), 'dsh-undo-w72-'));
+    const profW72 = join(homeW72, 'profiles', 'desktop');
+    await mkdir(profW72, { recursive: true });
+    await writeFile(join(profW72, 'cordis.patch.yml'), 'undo: {}\n');
+    await writeFile(join(profW72, 'package.json'), '{"name":"dsh-profile-desktop"}\n');
+    await mkdir(join(homeW72, 'undo'), { recursive: true });
+    await writeFile(join(homeW72, 'undo', 'settings.json'), JSON.stringify({ profileName: 'desktop' }));
+    const qW72 = (s) => "'" + String(s).replace(/'/g, "''") + "'";
+    // Two fixture rules make the assertion real (both bit me while building the
+    // standalone fixture):
+    //   1) DSH_UNDO_PROFILE=web pins the load-time root to web. Without it the
+    //      W71 probe already adopts the only profile at dot-source time, so
+    //      W70 could regress while this assertion stayed green.
+    //   2) Get-UndoSettings is the call that applies settings.profileName and
+    //      triggers the rebuild, so it must run before the specs are read.
+    // $WarningPreference silences the W71 notice: it is expected output, not a
+    // failure, and a stray warning may land on stdout on some hosts.
+    const psW72 = [
+      `$env:DSH_HOME = ${qW72(homeW72)}`,
+      `$env:DSH_UNDO_SETTINGS = ${qW72(join(homeW72, 'undo', 'settings.json'))}`,
+      `$env:DSH_UNDO_ROOT = ${qW72(join(homeW72, 'undo-snapshots'))}`,
+      `$env:DSH_UNDO_NO_DEPRECATION_NOTICE = '1'`,
+      `$env:DSH_UNDO_LANG = 'en'`,
+      `$env:DSH_UNDO_PROFILE = 'web'`,
+      `$WarningPreference = 'SilentlyContinue'`,
+      `. ${qW72(libW72Path)}`,
+      `$null = Get-UndoSettings`,
+      `$r = @($script:UndoFileSpecs | Where-Object { $_.RootKey -eq 'profile' } | ForEach-Object { $_.Root })`,
+      `Write-Output ('PROFILE_ROOT=' + (($r | Sort-Object -Unique) -join ';'))`,
+      `Write-Output ('PROFILE_COUNT=' + $r.Count)`,
+      `Write-Output ('MARKER=' + $script:UndoSpecRoot)`,
+    ].join('; ');
+    const r72 = await new Promise((resolve) => {
+      // -ExecutionPolicy Bypass：dot-source 一个 .ps1 是脚本执行，受执行策略约束；本机默认策略
+      // 是 Restricted，不加这一项子进程直接失败（实测：dot-source 被拒 → 断言恒红）。
+      execFile('powershell.exe', ['-NoProfile', '-NonInteractive', '-ExecutionPolicy', 'Bypass', '-Command', psW72], { timeout: 30000, windowsHide: true },
+        (err, stdout) => resolve({ ok: !err, out: String(stdout ?? '') }));
+    });
+    const rootW72 = join(homeW72, 'profiles', 'desktop');
+    const rootLineW72 = (r72.out.split(/\r?\n/).find((l) => l.startsWith('PROFILE_ROOT=')) ?? '').slice('PROFILE_ROOT='.length).trim();
+    check(r72.ok
+      && rootLineW72 === rootW72
+      && r72.out.includes('PROFILE_COUNT=5')
+      && r72.out.includes(`MARKER=${rootW72}`),
+      'W70: settings.profileName rebuilds all 5 profile file specs onto the real profile root');
+    await rm(homeW72, { recursive: true, force: true });
+  } else {
+    console.log(`  skip - W72 profile-root fixture needs Windows PowerShell (platform ${process.platform})`);
+    pass += 1;
+  }
 }
 
 // ── #34 撤回守卫：afterHash 指纹判断 + 撤回前 blob 兜底备份 ────────────────────
@@ -2297,14 +2577,14 @@ console.log('== T2b. loader 条目判定收紧（#47）==');
   await core.runDoctorFix(cfg4);
   check((await readFile(patch4, 'utf8')) === nested, '#47: fix leaves the nested config byte-identical');
 
-  // B) 顶层重复：仍检出（warn）并修掉，保留最后一条
+  // B) W54b：顶层条目不再登记 id。两个同 id 的顶层条目不报，fix 保持字节不变
+  // （判定收紧的代价：顶层同 id 的 warn 一并消失，记进交付报告的风险节）
   const top = ['- id: dup-entry', '  name: one', '- id: dup-entry', '  name: two', ''].join('\n');
   await writeFile(patch4, top, 'utf8');
   const repB = await core.runDoctor(cfg4);
-  check(loaderHits(repB).length === 1 && loaderHits(repB)[0].fixable === true, '#47: top-level duplicate still detected and fixable');
+  check(loaderHits(repB).length === 0, 'W54b: top-level entries no longer register an id (no report)');
   await core.runDoctorFix(cfg4);
-  const afterB = await readFile(patch4, 'utf8');
-  check((afterB.match(/id: dup-entry/g) ?? []).length === 1 && afterB.includes('name: two') && !afterB.includes('name: one'), '#47: top-level duplicate repaired, last entry kept');
+  check((await readFile(patch4, 'utf8')) === top, 'W54b: fix leaves a top-level same-id patch byte-identical');
 
   // C) 顶层 insert 的直接子条目：仍按 err 级检出并修掉
   const ins = ['- insert:', '    - id: dup-ins', '      name: one', '    - id: dup-ins', '      name: two', ''].join('\n');
@@ -2315,7 +2595,7 @@ console.log('== T2b. loader 条目判定收紧（#47）==');
   const afterC = await readFile(patch4, 'utf8');
   check((afterC.match(/id: dup-ins/g) ?? []).length === 1 && afterC.includes('name: two'), '#47: insert child duplicate repaired, last entry kept');
 
-  // D) 混合：顶层重复被修，嵌套同名模型原样保留
+  // D) 混合：顶层同 id 不报、嵌套同名模型也不报，整份文件 fix 后字节不变
   const mixed = [
     '- id: dup-top', '  name: one', '- id: dup-top', '  name: two',
     '- id: llm-pi-ai', '  config:', '    providers:', '      a:', '        models:',
@@ -2323,11 +2603,31 @@ console.log('== T2b. loader 条目判定收紧（#47）==');
   ].join('\n');
   await writeFile(patch4, mixed, 'utf8');
   const repD = await core.runDoctor(cfg4);
-  check(loaderHits(repD).length === 1 && String(loaderHits(repD)[0].name ?? '').includes('dup-top'), '#47: mixed patch reports only the top-level duplicate');
+  check(loaderHits(repD).length === 0, 'W54b: mixed patch reports no loader-id duplicate');
   await core.runDoctorFix(cfg4);
   const afterD = await readFile(patch4, 'utf8');
-  check((afterD.match(/id: dup-top/g) ?? []).length === 1 && afterD.includes('name: two') && !afterD.includes('name: one'), '#47: mixed patch drops the top-level duplicate only');
-  check((afterD.match(/same-model/g) ?? []).length === 2 && afterD.includes('- id: llm-pi-ai'), '#47: mixed patch keeps both nested model entries');
+  check(afterD === mixed, 'W54b: mixed patch is byte-identical after fix');
+  check((afterD.match(/id: dup-top/g) ?? []).length === 2 && (afterD.match(/same-model/g) ?? []).length === 2, 'W54b: both top-level and nested entries survive untouched');
+
+  // E) 第二类误报的真身：顶格 override 与 insert 直接子行同 id 不算重复；同一文件里另有一组
+  // insert 子行真重复时，只报真重复那组
+  const overrideSame = ['- id: dup-mix', '  name: top-override', '- insert:', '    - id: dup-mix', '      name: from-insert', ''].join('\n');
+  await writeFile(patch4, overrideSame, 'utf8');
+  const repE = await core.runDoctor(cfg4);
+  await core.runDoctorFix(cfg4);
+  check(loaderHits(repE).length === 0 && (await readFile(patch4, 'utf8')) === overrideSame,
+    'W54b: a top-level override sharing an id with an insert child is not reported and not touched by fix');
+  const bothE = [
+    '- id: dup-mix', '  name: top-override',
+    '- insert:',
+    '    - id: dup-mix', '      name: from-insert',
+    '    - id: real-dup', '      name: one',
+    '    - id: real-dup', '      name: two', '',
+  ].join('\n');
+  await writeFile(patch4, bothE, 'utf8');
+  const repE2 = await core.runDoctor(cfg4);
+  check(loaderHits(repE2).length === 1 && String(loaderHits(repE2)[0].name ?? '').includes('real-dup'),
+    'W54b: with an override in the way, only the genuine insert-child duplicate is reported');
 
   await cleanup(root4);
 }
@@ -3365,6 +3665,236 @@ await rm(root, { recursive: true, force: true });
   }
 }
 
+// ── W52：#49 profile 根混入宿主内部包 ─────────────────────────────────────────
+// 反向敏感：本块在改动前全线变红（预检里没有 pre-host-internal 这一项）。
+// 夹具按 hoisted 布局摆：profile 根 node_modules/@deepseek-ai/ 下放一个未在 manifest 里声明的
+// 包，元凶插件 deps-carry 在 profile 的 dependencies 里，它自己的 dependencies 声明了那个内部
+// 包，正是 #49 原案形态（「直接依赖的依赖」不构成豁免，否则本条 issue 自己会被放过）。
+console.log('== W52. #49 host-internal package pollution in the profile root ==');
+{
+  const core = await import('../lib/core.mjs');
+  const root52 = await mkdtemp(join(tmpdir(), 'dsh-undo-w52-'));
+  const home52 = join(root52, 'home');
+  const web52 = join(home52, 'profiles', 'web');
+  const nm52 = join(web52, 'node_modules');
+  const scope52 = join(nm52, '@deepseek-ai');
+  const auto52 = join(home52, 'undo-snapshots', 'auto');
+  const stray52 = join(scope52, 'dsh-tools');
+  const bak52 = `${stray52}.dsh-undo-bak`;
+  await mkdir(web52, { recursive: true });
+  await mkdir(scope52, { recursive: true });
+  await mkdir(auto52, { recursive: true });
+  await mkdir(join(nm52, 'deps-carry'), { recursive: true });
+  await mkdir(join(nm52, 'cosmokit'), { recursive: true });
+  await mkdir(stray52, { recursive: true });
+  await writeFile(join(stray52, 'package.json'), '{ "name": "@deepseek-ai/dsh-tools", "version": "0.0.1-stray" }\n');
+  await writeFile(join(nm52, 'cosmokit', 'package.json'), '{ "name": "cosmokit", "version": "1.8.6" }\n');
+  await writeFile(join(nm52, 'deps-carry', 'package.json'), '{ "name": "deps-carry", "version": "0.1.0", "dependencies": { "@deepseek-ai/dsh-tools": "^0.0.1" } }\n');
+  const manifest52 = (deps) => JSON.stringify({ name: 'dsh-profile-web', dependencies: deps, dsh: { profile: { bundles: [], patchReload: 'live' } } }, null, 2) + '\n';
+  const manifestPath52 = join(web52, 'package.json');
+  await writeFile(manifestPath52, manifest52({ 'deps-carry': '0.1.0' }));
+  const cfg52 = core.buildConfig({ profileName: 'web', homeDir: home52, profileDir: web52, manualDir: join(home52, 'undo-snapshots', 'manual'), autoDir: auto52, pluginDirs: [] });
+  const hits52 = async () => (await core.runDoctor(cfg52)).checks.filter((c) => c.code === 'pre-host-internal');
+
+  const first52 = await hits52();
+  check(first52.length === 1 && first52[0].level === 'err' && first52[0].fixable === true,
+    'W52: stray @deepseek-ai/dsh-tools in the profile root reported as err and fixable');
+  check(String(first52[0]?.detail ?? '').includes('deps-carry'),
+    'W52: the detail names the culprit plugin that declares the stray package');
+  await writeFile(manifestPath52, manifest52({ 'deps-carry': '0.1.0', '@deepseek-ai/dsh-tools': '0.0.1' }));
+  check((await hits52()).length === 0, 'W52: declaring the package in the profile manifest clears the report');
+  await writeFile(manifestPath52, manifest52({ 'deps-carry': '0.1.0' }));
+  check((await hits52()).every((c) => !/cosmokit/.test(String(c.target ?? '') + String(c.detail ?? ''))),
+    'W52: bare packages outside the @deepseek-ai scope are not checked');
+
+  // 空态：独立 home，profile 根没有 @deepseek-ai 目录时不报（不能和主夹具共用 home，
+  // profileDirs 会扫到同一 home 下的主 profile，把它的命中算进来）
+  const root52b = await mkdtemp(join(tmpdir(), 'dsh-undo-w52-empty-'));
+  const home52b = join(root52b, 'home');
+  const web52b = join(home52b, 'profiles', 'web');
+  await mkdir(web52b, { recursive: true });
+  await mkdir(join(home52b, 'undo-snapshots', 'auto'), { recursive: true });
+  await writeFile(join(web52b, 'package.json'), manifest52({}));
+  const cfg52b = core.buildConfig({ profileName: 'web', homeDir: home52b, profileDir: web52b, manualDir: join(home52b, 'undo-snapshots', 'manual'), autoDir: join(home52b, 'undo-snapshots', 'auto'), pluginDirs: [] });
+  check((await core.runDoctor(cfg52b)).checks.filter((c) => c.code === 'pre-host-internal').length === 0,
+    'W52: no @deepseek-ai directory means no report (empty state)');
+  await rm(root52b, { recursive: true, force: true });
+
+  const fixed52 = await core.runDoctorFix(cfg52);
+  const renamed52 = fixed52.applied.filter((a) => a.code === 'pre-host-internal');
+  check(renamed52.length === 1 && renamed52[0].ok === true && !(await core.pathExists(stray52))
+    && (await core.pathExists(bak52)) && (await readFile(join(bak52, 'package.json'), 'utf8')).includes('0.0.1-stray'),
+    'W52: fix renames the stray package to .dsh-undo-bak and keeps its content intact');
+  check((await hits52()).length === 0, 'W52: re-check after fix is clean (isolation artifacts are skipped)');
+  const fixed52b = await core.runDoctorFix(cfg52);
+  check(fixed52b.applied.filter((a) => a.code === 'pre-host-internal').length === 0,
+    'W52: a second fix is idempotent (no pre-host-internal action applied)');
+
+  // 隔离物已存在时再冒出一个同名污染件：走序号后缀，不覆盖更早的那份备份
+  await mkdir(stray52, { recursive: true });
+  await writeFile(join(stray52, 'package.json'), '{ "name": "@deepseek-ai/dsh-tools", "version": "0.0.1-second" }\n');
+  const fixed52c = await core.runDoctorFix(cfg52);
+  check(fixed52c.applied.some((a) => a.code === 'pre-host-internal' && a.ok === true)
+    && (await core.pathExists(`${bak52}-1`))
+    && (await readFile(join(bak52, 'package.json'), 'utf8')).includes('0.0.1-stray'),
+    'W52: an existing isolation artifact is kept and the new one takes the numbered suffix');
+
+  await rm(root52, { recursive: true, force: true });
+}
+
+// ── W68：#49 六态判据的冒烟断言（宿主树夹具 + 五态夹具）──────────────────────
+// 反向敏感：旧口径（未在 profile manifest 声明即报）下，同版本副本与指向宿主树的链接
+// 都会被误报，本块的豁免断言会红；判据实现见 lib/health.mjs 的 classifyHostInternal。
+// 宿主版本只有读到才能判 same-version / host-link。但 base.mjs 的 DSH_ROOT 是 import
+// 期常量，smoke 进程里的 core 早已 import 过，进程内改 env 造不出宿主树，因此宿主树
+// 夹具必须像 W48 那样起子进程：子进程在 import 之前拿到 DSH_ROOT=临时产品树，宿主
+// 版本才会走 install-anchor 来源。反过来，「宿主版本不可读」这条只能在进程内跑——
+// 合成包名保证任何真实宿主树里都读不到，这也正是生产上「读不到就不放行」的兜底路径。
+console.log('== W68. #49 six-state host-internal judgement ==');
+{
+  const core68 = await import('../lib/core.mjs');
+  const health68 = await import('../lib/health.mjs');
+  const { execFile: execFile68 } = await import('node:child_process');
+  const libUrl68 = (f) => pathToFileURL(join(dirname(fileURLToPath(import.meta.url)), '..', 'lib', f)).href;
+  const manifest68 = (deps) => JSON.stringify({ name: 'dsh-profile-web', dependencies: deps, dsh: { profile: { bundles: [], patchReload: 'live' } } }, null, 2) + '\n';
+  const writePkg68 = async (dir, name, version) => {
+    await mkdir(dir, { recursive: true });
+    await writeFile(join(dir, 'package.json'), JSON.stringify({ name, version }) + '\n', 'utf8');
+  };
+  // 子进程环境：DSH_ROOT / DSH_HOME 都在 import 期求值，必须在 spawn 时给；宿主注入的
+  // DSH_PROFILE / DSH_UNDO_* 会抢跑 profile 与库路径通道，照 W48 的 env48 清掉。
+  const env68 = (extra) => {
+    const e = { ...process.env, ...extra, DSH_UNDO_LANG: 'en', DSH_UNDO_NO_DESKTOP: '1' };
+    delete e.DSH_PROFILE; delete e.DSH_UNDO_PROFILE; delete e.DSH_UNDO_SETTINGS; delete e.DSH_UNDO_ROOT;
+    return e;
+  };
+  const norm68 = (p) => (process.platform === 'win32' ? String(p ?? '').toLowerCase() : String(p ?? ''));
+
+  // (1) 宿主版本不可读：进程内跑真 runDoctor。合成包名在宿主树里必然不存在，
+  //     readHostVersion 三个来源全落空，判据按 shadow 兜底报 err（D1 的兜底口径）。
+  const root68a = await mkdtemp(join(tmpdir(), 'dsh-undo-w68-unreadable-'));
+  const home68a = join(root68a, 'home');
+  const web68a = join(home68a, 'profiles', 'web');
+  const scope68a = join(web68a, 'node_modules', '@deepseek-ai');
+  const unreadName68 = 'dsh-undo-w68-shadow-probe';
+  await writePkg68(join(scope68a, unreadName68), `@deepseek-ai/${unreadName68}`, '3.0.0');
+  await writeFile(join(web68a, 'package.json'), manifest68({}), 'utf8');
+  await mkdir(join(home68a, 'undo-snapshots', 'auto'), { recursive: true });
+  const cfg68a = core68.buildConfig({ profileName: 'web', homeDir: home68a, profileDir: web68a, manualDir: join(home68a, 'undo-snapshots', 'manual'), autoDir: join(home68a, 'undo-snapshots', 'auto'), pluginDirs: [] });
+  const hits68a = (await core68.runDoctor(cfg68a)).checks.filter((c) => c.code === 'pre-host-internal');
+  const unreadCls68 = await health68.classifyHostInternal(web68a, unreadName68, {});
+  const unreadHit68 = hits68a.find((c) => String(c.name ?? '').includes(unreadName68));
+  check(
+    !!unreadHit68 && unreadHit68.level === 'err' && unreadHit68.fixable === true
+      && unreadCls68.kind === 'shadow' && unreadCls68.hostVersion === null
+      && String(unreadHit68.detail).includes('unreadable'),
+    'W68: host version unreadable still reports err and the detail marks the source unreadable',
+  );
+  await rm(root68a, { recursive: true, force: true });
+
+  // (2)-(8) 宿主树夹具：子进程 + DSH_ROOT=临时产品树（package.json + lib/bin.js + 同名包），
+  //     profile 根摆：同版本副本、异版本副本、指向宿主树的链接、指向宿主树外的链接。
+  const root68b = await mkdtemp(join(tmpdir(), 'dsh-undo-w68-hosttree-'));
+  const host68 = join(root68b, 'host');
+  const home68b = join(root68b, 'home');
+  const web68b = join(home68b, 'profiles', 'web');
+  const scope68b = join(web68b, 'node_modules', '@deepseek-ai');
+  const outside68b = join(root68b, 'outside');
+  const sameName68 = 'dsh-undo-w68-same';
+  const diffName68 = 'dsh-undo-w68-diff';
+  const linkName68 = 'dsh-undo-w68-hostlink';
+  const outName68 = 'dsh-undo-w68-outlink';
+  await mkdir(join(host68, 'lib'), { recursive: true });
+  await writeFile(join(host68, 'package.json'), JSON.stringify({ name: '@deepseek-ai/dsh', version: '0.0.0-w68' }) + '\n', 'utf8');
+  await writeFile(join(host68, 'lib', 'bin.js'), '// dsh product tree stand-in (W68)\n', 'utf8');
+  for (const n of [sameName68, diffName68, linkName68, outName68]) {
+    await writePkg68(join(host68, 'node_modules', '@deepseek-ai', n), `@deepseek-ai/${n}`, '9.0.0');
+  }
+  await writePkg68(join(scope68b, sameName68), `@deepseek-ai/${sameName68}`, '9.0.0');            // same-version
+  await writePkg68(join(scope68b, diffName68), `@deepseek-ai/${diffName68}`, '1.0.0');            // shadow（异版本）
+  await symlink(join(host68, 'node_modules', '@deepseek-ai', linkName68), join(scope68b, linkName68), process.platform === 'win32' ? 'junction' : 'dir');   // host-link
+  await writePkg68(join(outside68b, outName68), `@deepseek-ai/${outName68}`, '1.0.0');
+  await symlink(join(outside68b, outName68), join(scope68b, outName68), process.platform === 'win32' ? 'junction' : 'dir');   // 宿主树外链接
+  await mkdir(join(web68b, 'node_modules', 'deps-carry'), { recursive: true });
+  await writeFile(join(web68b, 'node_modules', 'deps-carry', 'package.json'), JSON.stringify({
+    name: 'deps-carry',
+    version: '0.1.0',
+    dependencies: Object.fromEntries([sameName68, diffName68, linkName68, outName68].map((n) => [`@deepseek-ai/${n}`, '*'])),
+  }) + '\n', 'utf8');
+  await writeFile(join(web68b, 'package.json'), manifest68({ 'deps-carry': '0.1.0' }), 'utf8');
+  await mkdir(join(home68b, 'snap', 'manual'), { recursive: true });
+  await mkdir(join(home68b, 'snap', 'auto'), { recursive: true });
+
+  const runner68 = join(root68b, 'w68-runner.mjs');
+  await writeFile(runner68, [
+    "const { promises: fs } = await import('node:fs');",
+    "const { join } = await import('node:path');",
+    `const { buildConfig } = await import(${JSON.stringify(libUrl68('base.mjs'))});`,
+    `const health = await import(${JSON.stringify(libUrl68('health.mjs'))});`,
+    "const home = process.env.W68_HOME;",
+    "const profileDir = process.env.W68_PROFILE;",
+    "const scope = join(profileDir, 'node_modules', '@deepseek-ai');",
+    "const names = JSON.parse(process.env.W68_NAMES);",
+    "const pkg = JSON.parse(await fs.readFile(join(profileDir, 'package.json'), 'utf8'));",
+    "const kinds = {};",
+    "for (const n of names) kinds[n] = await health.classifyHostInternal(profileDir, n, pkg);",
+    "const cfg = buildConfig({ profileName: 'web', homeDir: home, profileDir, manualDir: join(home, 'snap', 'manual'), autoDir: join(home, 'snap', 'auto'), pluginDirs: [] });",
+    "const report = await health.runDoctor(cfg);",
+    "const hits = report.checks.filter((c) => c.code === 'pre-host-internal').map((c) => ({ name: c.name, level: c.level, fixable: c.fixable === true, detail: c.detail }));",
+    "const fixed = await health.runDoctorFix(cfg);",
+    "const applied = fixed.applied.filter((a) => a.code === 'pre-host-internal').map((a) => ({ target: a.target, kind: a.kind, ok: a.ok }));",
+    "const exists = async (p) => { try { await fs.access(p); return true; } catch { return false; } };",
+    "const linkStat = await fs.lstat(join(scope, process.env.W68_LINK)).catch(() => null);",
+    "const linkReal = await fs.realpath(join(scope, process.env.W68_LINK)).catch(() => null);",
+    "console.log(JSON.stringify({ kinds, hits, applied, sameExists: await exists(join(scope, process.env.W68_SAME)), linkIsSymlink: linkStat ? linkStat.isSymbolicLink() : false, linkReal }));",
+    "process.exit(0);",
+    '',
+  ].join('\n'), 'utf8');
+  const r68 = await new Promise((resolve) => {
+    execFile68(process.execPath, [runner68], {
+      timeout: 120000,
+      env: env68({
+        DSH_ROOT: host68,
+        DSH_HOME: home68b,
+        W68_HOME: home68b,
+        W68_PROFILE: web68b,
+        W68_NAMES: JSON.stringify([sameName68, diffName68, linkName68, outName68]),
+        W68_SAME: sameName68,
+        W68_LINK: linkName68,
+      }),
+    }, (err, stdout, stderr) => resolve({
+      code: err ? (err.code ?? 1) : 0,
+      json: (() => { try { return JSON.parse(String(stdout).trim()); } catch { return null; } })(),
+      stderr: String(stderr ?? ''),
+    }));
+  });
+  const j68 = r68.json ?? {};
+  if (!r68.json) console.error(`W68: child probe produced no JSON (code ${r68.code}): ${r68.stderr.slice(0, 800)}`);
+  const kindOf68 = (n) => j68.kinds?.[n]?.kind;
+  const hitsOf68 = (n) => (j68.hits ?? []).filter((h) => String(h.name ?? '').includes(n));
+  const appliedOf68 = (n) => (j68.applied ?? []).filter((a) => String(a.target ?? '').includes(n));
+
+  check(kindOf68(sameName68) === 'same-version' && hitsOf68(sameName68).length === 0,
+    'W68: a copy whose version equals the host version is not reported (same-version)');
+  check(kindOf68(diffName68) === 'shadow' && hitsOf68(diffName68).some((h) => h.level === 'err' && h.fixable === true),
+    'W68: a version-mismatched copy is still reported as err + fixable (shadow)');
+  check(kindOf68(linkName68) === 'host-link' && hitsOf68(linkName68).length === 0,
+    'W68: a link into the host tree is not reported (host-link)');
+  check(kindOf68(outName68) === 'shadow' && hitsOf68(outName68).some((h) => h.level === 'err'),
+    'W68: a link pointing outside the host tree is still reported as err');
+  check(j68.sameExists === true && appliedOf68(sameName68).length === 0,
+    'W68: fix leaves a same-version copy in place (no rename)');
+  check(j68.linkIsSymlink === true
+      && norm68(j68.linkReal) === norm68(join(host68, 'node_modules', '@deepseek-ai', linkName68))
+      && appliedOf68(linkName68).length === 0,
+    'W68: fix leaves a host-tree link in place and still pointing at the host copy');
+  const diffDetail68 = String(hitsOf68(diffName68).find((h) => h.level === 'err')?.detail ?? '');
+  check(diffDetail68.includes('1.0.0') && diffDetail68.includes('9.0.0')
+      && diffDetail68.includes('install-anchor') && diffDetail68.includes('deps-carry'),
+    'W68: detail carries the local/host version triple (install-anchor) and the culprit plugin');
+  await rm(root68b, { recursive: true, force: true });
+}
+
 // ── W49：脱敏清单扩充（issue #39 SEC）────────────────────────────────────────
 // 反向敏感：本块断言在改动前全线变红。改动前 .yml 不在 SENSITIVE_DESTS 里，
 // profile-cordis.patch.yml 会被 copyFile 明文入库；路由只认 .yaml，.yml 会落到
@@ -3716,6 +4246,324 @@ console.log('== W48. install anchor, host-managed bundles, desktop safe-mode ref
     'W48 非默认 home：临时 home 下的 desktop profile 同样享豁免、同样被拒动',
   );
   await rm(w48root, { recursive: true, force: true });
+}
+
+
+// ── W62：库根绑定校验 + 宿主实例切换 + 连端口代理 ─────────────────────────────
+// 问题三的根因是「profile 标签链」与「库根链」各自独立、没有交叉校验：宿主侧
+// resolveStoreRoots 被 DEFAULT_SETTINGS 的平铺值架空，面板只能报 profile 名。
+// 这里钉住五件事：作用域判定、双端 status 字段、宿主实例路由、面板消费、空实例可见。
+{
+  const repo62 = fileURLToPath(new URL('..', import.meta.url));
+  const idx62 = await readFile(join(repo62, 'lib', 'index.js'), 'utf8');
+  const srv62 = await readFile(join(repo62, 'tools', 'undo-server.mjs'), 'utf8');
+  const cli62 = await readFile(join(repo62, 'lib', 'client.js'), 'utf8');
+  const app62 = await readFile(join(repo62, 'tools', 'webui', 'app.js'), 'utf8');
+  const base62 = await import('../lib/base.mjs');
+
+  // 1) 库根作用域：平铺共享 / 按 profile 分片 / 自定义
+  const root62 = base62.LEGACY_ROOT;
+  const flat62 = base62.describeStore('desktop', join(root62, 'manual'), join(root62, 'auto'));
+  const scoped62 = base62.describeStore('desktop', join(root62, 'desktop', 'manual'), join(root62, 'desktop', 'auto'));
+  const custom62 = base62.describeStore('desktop', join(root62, 'custom', 'manual'), join(root62, 'custom', 'auto'));
+  check(flat62.scope === 'flat' && flat62.shared === true && flat62.root === root62
+    && scoped62.scope === 'scoped' && scoped62.shared === false
+    && custom62.scope === 'custom' && custom62.shared === false,
+    `W62: 库根作用域判定 flat/scoped/custom（${flat62.scope}/${scoped62.scope}/${custom62.scope}）`);
+
+  // 2) 双端 status 都带库根与共享标志
+  const status62 = (src) => {
+    const at = src.indexOf("path === '/api/undo/status'");
+    return at < 0 ? '' : src.slice(at, src.indexOf('});', at) + 3);
+  };
+  check(/storeRoot: store\.root/.test(status62(idx62)) && /sharedStore: store\.shared/.test(status62(idx62))
+    && /storeRoot: store\.root/.test(status62(srv62)) && /sharedStore: store\.shared/.test(status62(srv62)),
+    'W62: 局内与局外 /api/undo/status 都返回 storeRoot/storeScope/sharedStore');
+
+  // 3) 宿主实例路由 + 代理只放行回环与固定 action
+  check(/path === '\/api\/undo\/instances'/.test(idx62) && idx62.includes("'/api/undo/instances/proxy'")
+    && idx62.includes('only loopback hosts are allowed') && idx62.includes('REMOTE_ACTIONS')
+    && idx62.includes("redirect: 'error'") && idx62.includes('AbortSignal.timeout(8000)'),
+    'W62: 宿主提供实例列表/切换/回环代理，代理限 loopback、固定 action、无重定向、8 秒超时');
+
+  // 4) 启动时按 settings.current 应用实例，且 store 根显式重绑
+  check(idx62.includes('normalizeInstances(fileSettings.instances)') && idx62.includes('fileSettings.currentProfile')
+    && idx62.includes('storeRootsProfileFor(home, profile)') && idx62.includes('target.manualDir = proots.manualDir'),
+    'W62: 启动时按 settings.current + currentProfile 应用实例，并按 home × profile 重绑 manualDir/autoDir');
+
+  // 5) 面板有实例下拉与连端口行；本机实例接口不被远端代理
+  check(cli62.includes('"data-undo-instance": "1"') && cli62.includes('"data-undo-remote": true')
+    && cli62.includes('!path.startsWith("/api/undo/instances")')
+    && cli62.includes('t("panel.instance.current")'),
+    'W62: 面板有实例下拉与连端口行，本机实例接口不走远端代理');
+
+  // 6) 共享库徽标：面板消费 status.sharedStore 并按列表归属数标注
+  check(cli62.includes('statusNow.sharedStore') && cli62.includes('t("status.shared")')
+    && cli62.includes('profilesSeen'),
+    'W62: 面板显示共享库徽标，并按列表实际归属数标注');
+
+  // 7) 局外 WebUI：instances 为空时仍显示当前 home，只隐藏下拉（B5 口径已废弃）
+  check(app62.includes("box.classList.remove('hidden');")
+    && app62.includes("if (list.length === 0) { sel.classList.add('hidden'); return; }")
+    && !app62.includes("if (list.length === 0) { box.classList.add('hidden')"),
+    'W62: 局外 WebUI 在 instances 为空时仍显示当前 home，只隐藏下拉');
+
+  // 8) 切库排队：撤销/恢复/导出/导入走操作锁，切库等它收尾
+  check((idx62.match(/withOpLock\(/g) || []).length >= 5 && idx62.includes('waitOpsIdle')
+    && idx62.includes('有操作仍在进行，未切换实例'),
+    'W62: 撤销/恢复/导出/导入走操作锁，切库等它收尾并给明确 busy 文案');
+
+  // 9) 300 条数据管线基准：单次最坏 < 一帧（阈值可跑）
+  const { runPanelPerf, PERF_LIMIT_MS } = await import('../tools/panel-perf.mjs');
+  const perf62 = runPanelPerf();
+  check(perf62.items === 300 && perf62.p95Ms < PERF_LIMIT_MS,
+    `W62: 300 条面板数据管线 p95 ${perf62.p95Ms}ms（最坏 ${perf62.worstMs}ms）< ${PERF_LIMIT_MS}ms（阈值可跑）`);
+}
+
+// ── W63：第二轮 A——instances 字段、实例增删、settings 跟随实例、热重读、合并写 ────
+// 契约 4.4/4.5：双端同形。四项修复点各一条源码级断言：「实例列表只存一份（启动实例的
+// settings 文件）」「切实例连 settingsFile 一起重绑」「GET 热重读」「POST 合并写」。
+// 实跑覆盖在 host-api-smoke（局内）与 undo-server-smoke（局外）；面板是 bundle 不可
+// import，故本段只钉接线，不重复实跑。
+{
+  const repo63 = fileURLToPath(new URL('..', import.meta.url));
+  const idx63 = await readFile(join(repo63, 'lib', 'index.js'), 'utf8');
+  const srv63 = await readFile(join(repo63, 'tools', 'undo-server.mjs'), 'utf8');
+  /** 从路由标记起截一段再看，避免整文件 includes 撞上同名分支或别处的同形赋值。 */
+  const slice63 = (src, marker, len) => {
+    const at = src.indexOf(marker);
+    return at < 0 ? '' : src.slice(at, at + len);
+  };
+  const gInst63 = (src) => slice63(src, "path === '/api/undo/instances'", 900);
+  const gSet63 = (src) => slice63(src, "method === 'GET' && path === '/api/undo/settings'", 1500);
+  const pSet63 = (src) => slice63(src, "method === 'POST' && path === '/api/undo/settings'", 6000);
+  const ipath63 = "const instanceSettingsPath = (home) => join(home, 'undo', 'settings.json');";
+
+  // 1) GET /api/undo/instances：既给 instances 文件，也给 effective（当前生效那本）
+  //    第二轮把 effective 收进 effectivePayload()，这里连同该 helper 的字段一起钉。
+  check(/settingsFile:\s*SETTINGS_FILE/.test(gInst63(idx63)) && /effective:\s*effectivePayload\(/.test(gInst63(idx63))
+    && /settingsFile:\s*SETTINGS_FILE/.test(gInst63(srv63)) && /effective:\s*effectivePayload\(ownPort\)/.test(gInst63(srv63))
+    && /effectivePayload[\s\S]{0,700}settingsFile:\s*cfg\.settingsFile[\s\S]{0,80}mode:\s*'host'/.test(idx63)
+    && /effectivePayload[\s\S]{0,700}settingsFile:\s*cfg\.settingsFile[\s\S]{0,80}mode:\s*'local'/.test(srv63),
+    'W63: 两端 GET /api/undo/instances 同时返回 instances 文件与 effective.settingsFile（mode 分 host/local）');
+
+  // 2) upsert 把列表写回启动实例的 settings 文件（局内 writeInstFile / 局外 writeServerSettings）
+  //    并给坏 name / 坏 port / 坏 home 明确的 400 错误码
+  check(/raw\.instances = list;[\s\S]{0,200}writeInstFile\(raw\)/.test(idx63)
+    && /writeInstFile = async \(raw\)[\s\S]{0,200}fs\.writeFile\(SETTINGS_FILE/.test(idx63)
+    && /writeServerSettings\(\{ \.\.\.s0, instances: list \}\)/.test(srv63)
+    && ['bad-name', 'bad-port', 'bad-home'].every((c) => idx63.includes("'" + c + "'") && srv63.includes("'" + c + "'")),
+    'W63: 两端 upsert 把实例列表写回启动实例的 settings 文件，坏 name/port/home 给 400 错误码');
+
+  // 3) remove 必须连带清 current，否则下次启动又切到已删实例
+  check(/raw\.current === name\) raw\.current = null;/.test(idx63) && /s0\.current === name \? null :/.test(srv63),
+    'W63: 两端 remove 删除实例时清掉指向它的 current');
+
+  // 4) GET /api/undo/settings：按 cfg.settingsFile 热重读（不重启），并区分 settingsFile 与 instancesFile
+  check(/loadSettingsAt\(cfg\.settingsFile\)[\s\S]{0,200}applySettingsToCfg\(cfg, rawSettings\)/.test(gSet63(idx63))
+    && /loadSettingsAt\(cfg\.settingsFile\)[\s\S]{0,200}applySettingsToCfg\(cfg, rawSettings\)/.test(gSet63(srv63))
+    && /settingsFile:\s*cfg\.settingsFile/.test(gSet63(idx63)) && /instancesFile:\s*SETTINGS_FILE/.test(gSet63(idx63))
+    && /settingsFile:\s*cfg\.settingsFile/.test(gSet63(srv63)) && /instancesFile:\s*SETTINGS_FILE/.test(gSet63(srv63)),
+    'W63: 两端 GET /api/undo/settings 按 cfg.settingsFile 热重读，并区分 settingsFile/instancesFile');
+
+  // 5) POST /api/undo/settings：写目标实例文件，且以原文为底合并（instances/current 不丢）
+  check(/fs\.writeFile\(cfg\.settingsFile/.test(pSet63(idx63)) && /fs\.writeFile\(cfg\.settingsFile/.test(pSet63(srv63))
+    && /loadSettingsAt\(cfg\.settingsFile\) \?\? \{\}\), \.\.\.publicSettings\(cfg\)/.test(pSet63(idx63))
+    && /loadSettingsAt\(cfg\.settingsFile\) \?\? \{\}\), \.\.\.publicSettings\(cfg\)/.test(pSet63(srv63)),
+    'W63: 两端 POST /api/undo/settings 写目标实例文件并合并原文（不丢 instances/current 等非设置键）');
+
+  // 6) 切实例时 settingsFile 与库根一起重绑（单改 homeDir 搬不动设置文件与快照库）
+  check(idx63.includes(ipath63) && idx63.includes('target.settingsFile = targetSettings;')
+    && srv63.includes(ipath63) && srv63.includes('built.settingsFile = instanceSettingsPath(home);'),
+    'W63: 两端切实例都把 settingsFile 重绑到 <home>/undo/settings.json');
+}
+
+// ── W64：第二轮 B——端口 × profile 纯函数（instances / scan）──────────────────
+// 契约第二、三节与 4.4/4.5 的数据模型都收在纯函数里：端口归一化决定「探不探测」，
+// 库根解析决定「读哪份快照库」，scan 解析决定「本机扫描建议可不可信」。这里全部
+// 直连纯函数钉住，不起服务、不依赖本机有没有 DSH 进程。
+{
+  const {
+    normalizePort, normalizeInstances, storeRootsProfileFor, describeStoreAt, snapshotProfileMatch, listProfilesFor,
+  } = await import('../lib/instances.mjs');
+  const scan = await import('../lib/scan.mjs');
+  const w64root = await mkdtemp(join(tmpdir(), 'dsh-undo-w64-'));
+
+  // 1) 端口归一化：整数与纯数字字符串保留，1..65535 为界
+  const validPort = [[1, 1], [3082, 3082], ['3082', 3082], [' 3082 ', 3082], [65535, 65535]];
+  check(validPort.every(([v, want]) => normalizePort(v) === want),
+    `W64: normalizePort 保留 1..65535 整数并接受纯数字字符串（${validPort.map(([v]) => JSON.stringify(v)).join(' / ')}）`);
+
+  // 2) 非整数/越界/非数字一律 null（含 1.5 —— 截断成 1 会让列表去探一个错端口）
+  const badPort = [0, 70000, 65536, -1, 1.5, '1.5', 'abc', '', true, null, undefined, NaN];
+  const badLeak = badPort.filter((v) => normalizePort(v) !== null)
+    .map((v) => JSON.stringify(v) + '→' + JSON.stringify(normalizePort(v)));
+  check(badLeak.length === 0,
+    `W64: normalizePort 把非整数/越界/非数字一律归 null（越界：${badLeak.join(', ') || '无'}）`);
+
+  // 3) 列表形状固定 + JSON 往返恒等（settings 读回再归一化必须逐字一致）
+  const raw64 = [
+    { name: 'a', port: '3082', home: join(w64root, 'a') },
+    { name: 'bad name', port: 1, home: join(w64root, 'x') },
+    { name: 'b', port: 1.5, home: join(w64root, 'b') },
+    { name: 'a', port: 9, home: join(w64root, 'dup') },
+  ];
+  const once64 = normalizeInstances(raw64);
+  const back64 = normalizeInstances(JSON.parse(JSON.stringify(once64)));
+  check(once64.length === 2 && Object.keys(once64[0]).sort().join(',') === 'home,name,port,profile,url'
+    && JSON.stringify(back64) === JSON.stringify(once64)
+    && once64[1].port === null,
+    'W64: normalizeInstances 输出形状固定 {name,port,home,profile,url}、坏端口归 null、JSON 往返恒等');
+
+  // 4) 库根解析三分支：scoped 有内容 > flat 有内容 > 都没有默认 scoped（exists:false）
+  const scopedHome = join(w64root, 'scoped-home');
+  await mkdir(join(scopedHome, 'undo-snapshots', 'desktop', 'manual'), { recursive: true });
+  const flatHome = join(w64root, 'flat-home');
+  await mkdir(join(flatHome, 'undo-snapshots', 'manual'), { recursive: true });
+  const freshHome = join(w64root, 'fresh-home');
+  await mkdir(freshHome, { recursive: true });
+  const rScoped = storeRootsProfileFor(scopedHome, 'desktop');
+  const rFlat = storeRootsProfileFor(flatHome, 'desktop');
+  const rFresh = storeRootsProfileFor(freshHome, 'desktop');
+  check(rScoped.scope === 'scoped' && rScoped.shared === false && rScoped.exists === true
+    && rScoped.manualDir === join(scopedHome, 'undo-snapshots', 'desktop', 'manual')
+    && rFlat.scope === 'flat' && rFlat.shared === true && rFlat.inheritedFrom === 'flat'
+    && rFlat.manualDir === join(flatHome, 'undo-snapshots', 'manual')
+    && rFresh.scope === 'scoped' && rFresh.shared === false && rFresh.exists === false
+    && rFresh.manualDir === join(freshHome, 'undo-snapshots', 'desktop', 'manual'),
+    'W64: storeRootsProfileFor 三分支（scoped 有内容 / 仅平铺 / 都没有→默认 scoped+exists:false）');
+
+  // 5) describeStoreAt：flat / scoped / custom；DSH_UNDO_ROOT 重定位的平铺根同样算 shared
+  const dFlat64 = describeStoreAt(flatHome, 'desktop', join(flatHome, 'undo-snapshots', 'manual'), join(flatHome, 'undo-snapshots', 'auto'));
+  const dLegacy64 = describeStoreAt(freshHome, 'web', join(w64root, 'legacy', 'manual'), join(w64root, 'legacy', 'auto'), join(w64root, 'legacy'));
+  const dScoped64 = describeStoreAt(scopedHome, 'desktop', join(scopedHome, 'undo-snapshots', 'desktop', 'manual'), join(scopedHome, 'undo-snapshots', 'desktop', 'auto'));
+  const dCustom64 = describeStoreAt(freshHome, 'web', join(w64root, 'custom', 'manual'), join(w64root, 'custom', 'auto'));
+  check(dFlat64.scope === 'flat' && dFlat64.shared === true && dFlat64.root === join(flatHome, 'undo-snapshots')
+    && dLegacy64.scope === 'flat' && dLegacy64.shared === true
+    && dScoped64.scope === 'scoped' && dScoped64.shared === false && dScoped64.root === join(scopedHome, 'undo-snapshots', 'desktop')
+    && dCustom64.scope === 'custom' && dCustom64.shared === false,
+    'W64: describeStoreAt 判 flat/scoped/custom（DSH_UNDO_ROOT 平铺根同样算 shared）');
+
+  // 6) 快照归属三态：scoped 天然属于该 profile；旧清单（无 schemaVersion）不可信 → null
+  const mScoped64 = snapshotProfileMatch({ profile: 'desktop' }, 'web', 'scoped');
+  const mSame64 = snapshotProfileMatch({ profile: 'web', schemaVersion: 1 }, 'web', 'flat');
+  const mDiff64 = snapshotProfileMatch({ profile: 'web', schemaVersion: 1 }, 'desktop', 'flat');
+  const mOld64 = snapshotProfileMatch({ profile: 'web' }, 'desktop', 'flat');
+  const mNoProf64 = snapshotProfileMatch({}, 'web', 'flat');
+  const mAll64 = snapshotProfileMatch({}, '', 'flat');
+  check(mScoped64 === true && mSame64 === true && mDiff64 === false && mOld64 === null
+    && mNoProf64 === null && mAll64 === true,
+    'W64: snapshotProfileMatch 三态（scoped→true、schemaVersion≥1 同 profile→true、旧清单/无归属→null）');
+
+  // 7) 进程表解析：PowerShell ConvertTo-Json 单对象/数组都要认，坏项不抛
+  const psSingle64 = scan.parseProcessesPowerShell(JSON.stringify({ ProcessId: 32736, Name: 'DeepSeek Harness.exe', CommandLine: 'app.exe --port 3082 --home D:\\h' }));
+  const psArr64 = scan.parseProcessesPowerShell(JSON.stringify([
+    { ProcessId: 1, Name: 'node', CommandLine: 'node a.js' },
+    { ProcessId: 'abc', Name: 'x', CommandLine: '' },
+  ]));
+  check(psSingle64.length === 1 && psSingle64[0].pid === 32736 && /DeepSeek/.test(psSingle64[0].name)
+    && /--port 3082/.test(psSingle64[0].cmdline)
+    && psArr64.length === 2 && psArr64[1].pid === null
+    && scan.parseProcessesPowerShell('not json').length === 0,
+    'W64: scan.parseProcessesPowerShell 兼容单对象/数组 JSON，坏 pid 归 null，坏文本返回空');
+
+  // 8) netstat -ano：只收 LISTENING 行
+  const nsText64 = [
+    '',
+    '  Proto  Local Address          Foreign Address        State           PID',
+    '  TCP    127.0.0.1:3082         0.0.0.0:0              LISTENING       32736',
+    '  TCP    127.0.0.1:57472        127.0.0.1:52000        ESTABLISHED     1111',
+  ].join('\r\n');
+  const ns64 = scan.parseNetstatWindows(nsText64);
+  check(ns64.length === 1 && ns64[0].pid === 32736 && ns64[0].port === 3082 && ns64[0].addr === '127.0.0.1',
+    `W64: scan.parseNetstatWindows 只收 LISTENING 行并拆出 pid/端口/地址（${JSON.stringify(ns64)}）`);
+
+  // 9) ps -eo pid=,args=
+  const ps64 = scan.parsePsPosix('\n  1234 /usr/bin/node /opt/dsh/app.js --port 3082\n  bogus line\n');
+  check(ps64.length === 1 && ps64[0].pid === 1234 && ps64[0].name === 'node' && /--port 3082/.test(ps64[0].cmdline),
+    'W64: scan.parsePsPosix 取 pid/命令名/完整命令行，空行与坏行跳过');
+
+  // 10) lsof -nP -iTCP -sTCP:LISTEN
+  const lf64 = scan.parseLsof('node 1234 user 20u IPv4 0x1 0t0 TCP 127.0.0.1:3082 (LISTEN)\nnode 5678 user 21u IPv4 0x2 0t0 TCP 127.0.0.1:52000->1.2.3.4:80 (ESTABLISHED)');
+  check(lf64.length === 1 && lf64[0].pid === 1234 && lf64[0].port === 3082,
+    'W64: scan.parseLsof 只收 (LISTEN) 行并取 pid/端口');
+
+  // 11) ss -ltnp
+  const ss64 = scan.parseSs('State Recv-Q Send-Q Local Address:Port Peer Address:Port Process\nLISTEN 0 511 127.0.0.1:3082 0.0.0.0:* users:(("node",pid=1234,fd=20))');
+  check(ss64.length === 1 && ss64[0].pid === 1234 && ss64[0].port === 3082 && ss64[0].addr === '127.0.0.1',
+    'W64: scan.parseSs 从 users:(pid=) 与本地地址取 pid/端口');
+
+  // 13) profiles 目录过滤：profiles/node_modules 不是 profile（真实机器实测会冒出来）
+  const profHome64 = join(w64root, 'prof-home');
+  await mkdir(join(profHome64, 'profiles', 'web'), { recursive: true });
+  await writeFile(join(profHome64, 'profiles', 'web', 'package.json'), '{}');
+  await mkdir(join(profHome64, 'profiles', 'node_modules'), { recursive: true });
+  await mkdir(join(profHome64, 'profiles', 'headless'), { recursive: true });
+  await writeFile(join(profHome64, 'profiles', 'headless', 'cordis.yml'), '# headless profile');
+  await mkdir(join(profHome64, 'profiles', 'junk'), { recursive: true });
+  const profList64 = listProfilesFor(profHome64);
+  check(profList64.includes('web') && profList64.includes('headless')
+    && !profList64.includes('node_modules') && !profList64.includes('junk'),
+    `W64: listProfilesFor 只认 profile 目录（排除 node_modules 与无标记目录：${profList64.join(',')}）`);
+
+  // 14) 局内设置页与局外设置项对齐：启动体检 / 升级护航 / 自动安全模式 / 守卫处置 / 守卫快捷方式
+  const cli64 = await readFile(fileURLToPath(new URL('../lib/client.js', import.meta.url)), 'utf8');
+  check(['settings.bootHealth', 'settings.upgradeGuard', 'settings.autoSafeMode', 'settings.guardMode', 'settings.guardShortcut']
+    .every((k) => cli64.includes('t("' + k + '")')),
+    'W64: 局内设置页补齐局外已有的五项（启动体检/升级护航/自动安全模式/守卫处置/守卫快捷方式）');
+
+  // 12) 命令行端口：--port 3082 / --port=3082 都认，没有就是 null
+  check(scan.portFromCmdline('app.exe --port 3082') === 3082 && scan.portFromCmdline('app.exe --port=3082') === 3082
+    && scan.portFromCmdline('app.exe --noport') === null && scan.portFromCmdline('') === null,
+    'W64: scan.portFromCmdline 解析 --port/--port=，无端口归 null');
+
+  await rm(w64root, { recursive: true, force: true });
+}
+
+// ── W73 / W74 / W76 / W77 / W78：客户端面（issue #50 / #52 / 插件页图标）──────────
+// 面板与头部是 loader 产物，这里做源码级断言；真实渲染与四档宽度走隔离实例人工验收。
+console.log('== W73/W74/W76/W77/W78. client surface (portal / header modes / drawer / icon) ==');
+{
+  const repoDir = fileURLToPath(new URL('..', import.meta.url));
+  const cliText = await readFile(join(repoDir, 'lib', 'client.js'), 'utf8');
+  const repoPrefix = repoDir.endsWith('\\') || repoDir.endsWith('/') ? repoDir : repoDir + '\\';
+
+  // W77（#52）：两个浮层都被 UndoLayer 包住；react-dom 取不到时降级，不让客户端半体起不来。
+  const wrapped = (marker) => new RegExp(String.raw`\(0, react_jsx_runtime\.jsx\)\(UndoLayer, \{ children: \(0, react_jsx_runtime\.jsx\)\("div", \{\s*className: styles\.overlay,\s*"${marker}": true,`).test(cliText);
+  check(cliText.includes('createPortal') && cliText.includes('function UndoLayer(')
+    && cliText.includes('try { reactDom = require("react-dom"); } catch (e) { reactDom = null; }')
+    && wrapped('data-undo-msg-panel') && wrapped('data-undo-panel'),
+    'W77: 两个浮层都走 UndoLayer（createPortal 到 body），react-dom 缺失时降级不抛错');
+
+  // W78（#52）：底部抽屉、视口上限、横向滚动、减少动效。
+  check(/\.u_overlay\{[^}]*align-items:flex-end/.test(cliText)
+    && /\.u_panel\{width:min\(1180px,96vw\);max-height:calc\(100vh - 40px\)/.test(cliText)
+    && cliText.includes('@media (prefers-reduced-motion:reduce){.u_panel{animation:none}}')
+    && /\.u_tbody\{overflow:auto/.test(cliText),
+    'W78: 浮层改底部抽屉、面板限制在视口内、表格可横向滚动、尊重减少动效偏好');
+
+  // W74（#50）：三档档位 + 容器查询 + 文字节点类 + 单入口菜单五条目。
+  const menuItems = ['undo', 'redo', 'snapshots', 'msg', 'panel.title'].every((k) => cliText.includes('item(t("' + k + '"), on'));
+  check(cliText.includes('@container (max-width:960px)') && cliText.includes('@container (max-width:640px)')
+    && cliText.includes('flex:none;min-width:0') && cliText.includes('"data-undo-mode"')
+    && cliText.includes('function UndoMenu(') && menuItems
+    && ['auto', 'full', 'compact'].every((m) => cliText.includes('t("settings.headerMode.' + m + '")')),
+    'W74: 对话头三档（auto/full/compact）+ 容器查询 + 窄档单入口菜单五条目');
+
+  // W76：插件页图标字段自洽（存在、格式允许、不超过 256 KiB、路径不逃出包目录）。
+  try {
+    const pkg = JSON.parse(await readFile(join(repoDir, 'package.json'), 'utf8'));
+    const iconRel = typeof pkg.icon === 'string' ? pkg.icon : '';
+    const iconPath = join(repoDir, iconRel);
+    const insidePkg = iconRel !== '' && !iconRel.split(/[\\/]/).includes('..') && iconPath.startsWith(repoPrefix);
+    const ext = ((iconRel.match(/\.([a-z0-9]+)$/i) ?? [])[1] ?? '').toLowerCase();
+    let iconBytes = 0;
+    if (insidePkg) { try { iconBytes = (await readFile(iconPath)).length; } catch { iconBytes = 0; } }
+    check(insidePkg && ['svg', 'png', 'jpg', 'jpeg', 'webp'].includes(ext) && iconBytes > 0 && iconBytes <= 256 * 1024,
+      `W76: package.json.icon 指向包内合法图片且体积不超过 256 KiB（${iconRel || 'missing'}, ${iconBytes}B）`);
+  } catch (e) {
+    check(false, 'W76: package.json.icon 可读可校验（' + String((e && e.message) || e) + '）');
+  }
 }
 
 console.log(`\n== RESULT: ${pass} passed, ${fail} failed ==`);

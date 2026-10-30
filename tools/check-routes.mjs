@@ -44,9 +44,12 @@ const BOTH = [
   'POST /api/undo/pick-dir',
   'POST /api/undo/pick-file',
   'POST /api/undo/safe-mode',
+  'GET /api/undo/instances',
+  'POST /api/undo/instances',
+  'POST /api/undo/scan',
 ];
 /** 仅局内（DSH 宿主 REST 面）实现 */
-const HOST_ONLY = ['GET /api/undo/tree'];
+const HOST_ONLY = ['GET /api/undo/tree', 'POST /api/undo/instances/proxy'];
 /** 仅局外 undo-server 实现 */
 const STANDALONE_ONLY = ['GET /api/undo/doctor', 'POST /api/undo/doctor/fix', 'GET /api/undo/locale'];
 

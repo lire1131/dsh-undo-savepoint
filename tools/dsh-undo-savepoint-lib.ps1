@@ -17,6 +17,67 @@ if (-not $env:DSH_UNDO_NO_DEPRECATION_NOTICE) {
     Write-Host 'dsh-undo-savepoint: PowerShell 工具已进入弃用期，0.6.0 将移除。替代方案：node tools\undo-server.mjs' -ForegroundColor Yellow
 }
 
+# ── 多语言（V0.3.9 R7）：离线 CLI/GUI 语言选择与翻译 ──────────────────────────
+# 唯一词典源：lib/i18n/{zh,en}.json（与 Node host / WebUI 共用同一份数据，防漂移）。
+# 优先级：$env:DSH_UNDO_LANG > $PSUICulture（中文系统→zh）> en 兜底。
+# 用法：Get-UndoText -Key 'snap.created' -Params @{ id = $x; n = $y } -Lang 'zh'
+# W71 (issue #51): the two helpers live at the top of this file because the
+# default-profile probe runs while the file is loading and needs the notice
+# text before the rest of the script has been defined.
+# 仅 PowerShell 侧使用的文案放 $script:UndoTextExtra，不往共享词典加 key（Node 侧
+# 不会发这两条），避免双端漂移；共享词典里出现同名 key 时仍以共享词典为准。
+$script:UndoTextExtra = @{
+    zh = @{
+        'profile.autoDetected' = '未设置 DSH_UNDO_PROFILE，已自动选用唯一检测到的 profile「{name}」（{path}）。要固定请设置 DSH_UNDO_PROFILE 或 settings.json 的 profileName。'
+        'profile.ambiguous' = '未设置 DSH_UNDO_PROFILE，检测到多个 profile（{names}），保持默认 web。请用 DSH_UNDO_PROFILE 或 settings.json 的 profileName 指定。'
+    }
+    en = @{
+        'profile.autoDetected' = 'DSH_UNDO_PROFILE is not set: automatically using the only detected profile "{name}" ({path}). Set DSH_UNDO_PROFILE or settings.json profileName to pin it.'
+        'profile.ambiguous' = 'DSH_UNDO_PROFILE is not set: several profiles were detected ({names}); keeping the default web. Set DSH_UNDO_PROFILE or settings.json profileName to pick one.'
+    }
+}
+
+function Get-UndoLanguage {
+    if ($env:DSH_UNDO_LANG) {
+        $l = $env:DSH_UNDO_LANG.ToLower()
+        if ($l.StartsWith('zh')) { return 'zh' }
+        if ($l.StartsWith('en')) { return 'en' }
+        return 'en'
+    }
+    try {
+        if ($PSUICulture -match '^zh') { return 'zh' }
+    } catch { /* 区域不可用时忽略 */ }
+    return 'en'
+}
+
+function Get-UndoText {
+    param(
+        [Parameter(Mandatory = $true)][string]$Key,
+        [hashtable]$Params = @{},
+        [string]$Lang = ''
+    )
+    if (-not $Lang) { $Lang = Get-UndoLanguage }
+    $i18nDir = Join-Path $PSScriptRoot '..\lib\i18n'
+    $file = Join-Path $i18nDir "$Lang.json"
+    if (-not (Test-Path -LiteralPath $file)) { $file = Join-Path $i18nDir 'en.json' }
+    if (-not (Test-Path -LiteralPath $file)) { return $Key }
+    try {
+        $dict = Get-Content -LiteralPath $file -Raw -Encoding UTF8 | ConvertFrom-Json
+        $prop = $dict.PSObject.Properties[$Key]
+        if ($prop) {
+            $text = [string]$prop.Value
+        } else {
+            $extra = $script:UndoTextExtra[$Lang]
+            if (-not $extra -or -not $extra.ContainsKey($Key)) { return $Key }
+            $text = [string]$extra[$Key]
+        }
+    } catch { return $Key }
+    foreach ($k in $Params.Keys) {
+        $text = $text.Replace('{' + $k + '}', [string]$Params[$k])
+    }
+    return $text
+}
+
 $script:DshHome = if ($env:DSH_HOME) { $env:DSH_HOME } else { Join-Path $env:USERPROFILE '.dsh' }
 $script:UndoSnapshotRoot = if ($env:DSH_UNDO_ROOT) { $env:DSH_UNDO_ROOT } else { Join-Path $script:DshHome 'undo-snapshots' }
 $script:UndoLegacyRoot = $script:UndoSnapshotRoot
@@ -25,11 +86,43 @@ $script:UndoAutoDir = Join-Path $script:UndoSnapshotRoot 'auto'
 $script:UndoHome = if ($env:DSH_UNDO_SETTINGS) { Split-Path $env:DSH_UNDO_SETTINGS -Parent } else { Join-Path $script:DshHome 'undo' }
 $script:UndoSettingsFile = if ($env:DSH_UNDO_SETTINGS) { $env:DSH_UNDO_SETTINGS } else { Join-Path $script:UndoHome 'settings.json' }
 $script:UndoHomeRoot = $script:DshHome
+
+# ── W71 (issue #51): default profile probe ────────────────────────────────
+# The offline tools cannot see the CLI argv, so the profile name comes from
+# DSH_UNDO_PROFILE or settings.json (profileName wins). When the env var is
+# unset, a home with exactly one real profile (a directory under
+# <home>\profiles that contains cordis.patch.yml) adopts that profile instead
+# of silently pointing at a missing profiles\web. Several candidates keep the
+# 'web' default with an ambiguity notice; none keeps it silently.
+function Get-UndoDefaultProfile {
+    $profilesDir = Join-Path $script:UndoHomeRoot 'profiles'
+    if (-not (Test-Path -LiteralPath $profilesDir)) { return 'web' }
+    $candidates = @(
+        Get-ChildItem -LiteralPath $profilesDir -Directory -Force -ErrorAction SilentlyContinue |
+            Where-Object { Test-Path -LiteralPath (Join-Path $_.FullName 'cordis.patch.yml') } |
+            ForEach-Object { $_.Name }
+    )
+    if ($candidates.Count -eq 1) {
+        Write-Warning (Get-UndoText 'profile.autoDetected' -Params @{ name = $candidates[0]; path = (Join-Path $profilesDir $candidates[0]) })
+        return $candidates[0]
+    }
+    if ($candidates.Count -gt 1) {
+        Write-Warning (Get-UndoText 'profile.ambiguous' -Params @{ names = ($candidates -join ', ') })
+    }
+    return 'web'
+}
+
 # v0.3.3 (issue #3): multi-profile support. The offline tools cannot see the
 # CLI argv, so the profile name comes from $env:DSH_UNDO_PROFILE or the
-# settings file (profileName), defaulting to 'web'.
-$script:UndoProfileName = if ($env:DSH_UNDO_PROFILE) { $env:DSH_UNDO_PROFILE } else { 'web' }
+# settings file (profileName). Without the env var, Get-UndoDefaultProfile
+# probes <home>\profiles\* and falls back to 'web'.
+$script:UndoProfileName = if ($env:DSH_UNDO_PROFILE) { $env:DSH_UNDO_PROFILE } else { Get-UndoDefaultProfile }
 $script:UndoProfileRoot = Join-Path $script:UndoHomeRoot "profiles\$script:UndoProfileName"
+# W70 (issue #51): the profile root the current $script:UndoFileSpecs was built
+# for. Initialize-UndoSpec records it; Get-UndoSettings rebuilds the table only
+# when settings.profileName moves the root, and the marker keeps that check to a
+# cheap string compare on the frequent path instead of re-reading lib/spec.json.
+$script:UndoSpecRoot = $null
 
 # Store defaults per profile with legacy fallback (mirrors resolveStoreRoots
 # in lib/index.js): use <root>/<profile>/{auto,manual} when it exists or when
@@ -79,7 +172,12 @@ $script:UndoMaxSnapBytes = 10485760
 # Read lib/spec.json (single source of truth shared with the Node plugin).
 function Initialize-UndoSpec {
     $specPath = Join-Path $PSScriptRoot '..\lib\spec.json'
-    if (-not (Test-Path -LiteralPath $specPath)) { return }
+    if (-not (Test-Path -LiteralPath $specPath)) {
+        # W70: record on the built-in fallback too, otherwise every settings read
+        # would judge the table stale and retry the rebuild forever.
+        $script:UndoSpecRoot = $script:UndoProfileRoot
+        return
+    }
     try {
         $spec = Get-Content -LiteralPath $specPath -Raw -Encoding UTF8 | ConvertFrom-Json
         if ($spec.configFiles) {
@@ -97,6 +195,7 @@ function Initialize-UndoSpec {
         if ($spec.pluginMaxFileBytes) { $script:UndoMaxFileBytes = [int]$spec.pluginMaxFileBytes }
         if ($spec.pluginMaxSnapshotBytes) { $script:UndoMaxSnapBytes = [int]$spec.pluginMaxSnapshotBytes }
     } catch { }
+    $script:UndoSpecRoot = $script:UndoProfileRoot
 }
 Initialize-UndoSpec
 
@@ -492,6 +591,9 @@ function Get-UndoSettings {
         autoDir = $storeDefaults.autoDir
         pluginDirs = @()
         sensitiveMode = 'redact'
+        # W73 (issue #50): display-only here; the PowerShell tooling never renders
+        # the undo header. Read-back/validation lives on the Node side.
+        headerMode = 'auto'
         profileName = $script:UndoProfileName
     }
     if (Test-Path -LiteralPath $script:UndoSettingsFile) {
@@ -508,6 +610,10 @@ function Get-UndoSettings {
             if ($null -ne $j.autoCleanup) { $defaults.autoCleanup = [bool]$j.autoCleanup }
             if ($j.pluginDirs) { $defaults.pluginDirs = @($j.pluginDirs) }
             if ($j.sensitiveMode) { $defaults.sensitiveMode = $j.sensitiveMode }
+            # W73 (issue #50): read back with a whitelist. Set-UndoSettings writes
+            # the whole settings object back, so without this a CLI/GUI settings
+            # save would overwrite a Node-side 'full'/'compact' with 'auto'.
+            if ($j.headerMode -in @('auto', 'full', 'compact')) { $defaults.headerMode = $j.headerMode }
             # v0.3.3 (issue #3): settings.profileName overrides the default;
             # then recompute store defaults UNLESS explicit dirs are present
             if ($j.profileName) {
@@ -519,6 +625,11 @@ function Get-UndoSettings {
                     if (-not $j.manualDir) { $defaults.manualDir = $storeDefaults.manualDir }
                     if (-not $j.autoDir) { $defaults.autoDir = $storeDefaults.autoDir }
                 }
+                # W70 (issue #51): the spec table may still be the one built for
+                # the load-time root (DSH_UNDO_PROFILE or 'web'). Rebuild it once
+                # the settings file moves the root; Initialize-UndoSpec updates
+                # the marker, so the next calls short-circuit on the compare.
+                if ($script:UndoSpecRoot -ne $script:UndoProfileRoot) { Initialize-UndoSpec }
             }
         } catch { }
     }
@@ -1198,42 +1309,3 @@ function Get-UndoDiffText([string]$Id) {
     return $sb.ToString()
 }
 
-# ── 多语言（V0.3.9 R7）：离线 CLI/GUI 语言选择与翻译 ──────────────────────────
-# 唯一词典源：lib/i18n/{zh,en}.json（与 Node host / WebUI 共用同一份数据，防漂移）。
-# 优先级：$env:DSH_UNDO_LANG > $PSUICulture（中文系统→zh）> en 兜底。
-# 用法：Get-UndoText -Key 'snap.created' -Params @{ id = $x; n = $y } -Lang 'zh'
-function Get-UndoLanguage {
-    if ($env:DSH_UNDO_LANG) {
-        $l = $env:DSH_UNDO_LANG.ToLower()
-        if ($l.StartsWith('zh')) { return 'zh' }
-        if ($l.StartsWith('en')) { return 'en' }
-        return 'en'
-    }
-    try {
-        if ($PSUICulture -match '^zh') { return 'zh' }
-    } catch { /* 区域不可用时忽略 */ }
-    return 'en'
-}
-
-function Get-UndoText {
-    param(
-        [Parameter(Mandatory = $true)][string]$Key,
-        [hashtable]$Params = @{},
-        [string]$Lang = ''
-    )
-    if (-not $Lang) { $Lang = Get-UndoLanguage }
-    $i18nDir = Join-Path $PSScriptRoot '..\lib\i18n'
-    $file = Join-Path $i18nDir "$Lang.json"
-    if (-not (Test-Path -LiteralPath $file)) { $file = Join-Path $i18nDir 'en.json' }
-    if (-not (Test-Path -LiteralPath $file)) { return $Key }
-    try {
-        $dict = Get-Content -LiteralPath $file -Raw -Encoding UTF8 | ConvertFrom-Json
-        $prop = $dict.PSObject.Properties[$Key]
-        if (-not $prop) { return $Key }
-        $text = [string]$prop.Value
-    } catch { return $Key }
-    foreach ($k in $Params.Keys) {
-        $text = $text.Replace('{' + $k + '}', [string]$Params[$k])
-    }
-    return $text
-}

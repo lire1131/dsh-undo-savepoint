@@ -127,9 +127,9 @@ mklink /J "<your-dsh-install>\node_modules\dsh-undo-savepoint" "D:\dsh\plugins\d
 
 ## Support range (DSH versions)
 
-At install time and at profile startup the plugin compares the runtime version reported by `dsh --version` against the range this package declares, and refuses to load on a mismatch. `engines.dsh` in `package.json` is a chain of parallel ranges covering the successive `0.1.x` declarations, ending with `>=0.2.0-rc.2`.
+At install time and at profile startup the plugin compares the runtime version reported by `dsh --version` against the range this package declares, and refuses to load on a mismatch. `engines.dsh` in `package.json` is a chain of parallel ranges covering the successive `0.1.x` and `0.2.x` declarations, ending with `>=0.2.1-0`.
 
-Verified: DSH 0.2.0-rc.2 desktop build (full peer tree with cordis 4.0.4), covering the `web` profile together with the command line, the offline WebUI and the offline CLI. All four in-repo gates pass with zero failures, which is what the CLI and web coverage rests on.
+Verified: the DSH 0.2.0-rc.2 desktop build (full peer tree with cordis 4.0.4) and the 0.2.1-rc.3 desktop build (full peer tree with cordis 4.0.5), both covering the `web` profile together with the command line, the offline WebUI and the offline CLI. All four in-repo gates pass with zero failures, which is what the CLI and web coverage rests on.
 
 Verified: installation, GUI tool receipts, safe-mode refusal, and uninstall on an isolated Electron instance (desktop profile).
 
