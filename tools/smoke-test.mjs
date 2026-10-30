@@ -3844,9 +3844,10 @@ console.log('== W68. #49 six-state host-internal judgement ==');
     "const fixed = await health.runDoctorFix(cfg);",
     "const applied = fixed.applied.filter((a) => a.code === 'pre-host-internal').map((a) => ({ target: a.target, kind: a.kind, ok: a.ok }));",
     "const exists = async (p) => { try { await fs.access(p); return true; } catch { return false; } };",
-    "const linkStat = await fs.lstat(join(scope, process.env.W68_LINK)).catch(() => null);",
-    "const linkReal = await fs.realpath(join(scope, process.env.W68_LINK)).catch(() => null);",
-    "console.log(JSON.stringify({ kinds, hits, applied, sameExists: await exists(join(scope, process.env.W68_SAME)), linkIsSymlink: linkStat ? linkStat.isSymbolicLink() : false, linkReal }));",
+    "const linkPath = join(scope, process.env.W68_LINK);",
+    "const linkExists = await exists(linkPath);",
+    "const linkReal = await fs.realpath(linkPath).catch(() => null);",
+    "console.log(JSON.stringify({ kinds, hits, applied, sameExists: await exists(join(scope, process.env.W68_SAME)), linkExists, linkReal }));",
     "process.exit(0);",
     '',
   ].join('\n'), 'utf8');
@@ -3884,8 +3885,14 @@ console.log('== W68. #49 six-state host-internal judgement ==');
     'W68: a link pointing outside the host tree is still reported as err');
   check(j68.sameExists === true && appliedOf68(sameName68).length === 0,
     'W68: fix leaves a same-version copy in place (no rename)');
-  check(j68.linkIsSymlink === true
-      && norm68(j68.linkReal) === norm68(join(host68, 'node_modules', '@deepseek-ai', linkName68))
+  // 断言只看 realpath 落点与「未被改名」，不看 Node 对 junction 的 lstat 归类：Node 22 在
+  // Windows 上把 junction 报成目录（isSymbolicLink=false），Node 20/24 报成链接。产品判据
+  // （classifyHostInternal）本来就只用 realpath，断言跟着产品口径走，避免测到 Node 内部实现。
+  // 两侧都先 realpath：macOS 的 /var 与 /private/var、Windows 的 8.3 短名与长名都是别名。
+  const linkExpectedReal68 = await realpath(join(host68, 'node_modules', '@deepseek-ai', linkName68)).catch(() => null);
+  check(j68.linkExists === true
+      && linkExpectedReal68 !== null
+      && norm68(j68.linkReal) === norm68(linkExpectedReal68)
       && appliedOf68(linkName68).length === 0,
     'W68: fix leaves a host-tree link in place and still pointing at the host copy');
   const diffDetail68 = String(hitsOf68(diffName68).find((h) => h.level === 'err')?.detail ?? '');

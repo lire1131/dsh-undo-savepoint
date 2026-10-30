@@ -54,7 +54,7 @@ A canary preview of 0.5.1, not published to npm. It lands DSH 0.2.1 line support
 
 ### Tests
 
-- **Final assertion counts**. smoke 623, host-api 36, undo-server 35, home-resolution 3 branches and e2e 14, all with zero failures; route parity 22-2-3; check-size 1608817 bytes.
+- **Final assertion counts**. smoke 623, host-api 36, undo-server 35, home-resolution 3 branches and e2e 14, all with zero failures; route parity 22-2-3; check-size 1609337 bytes.
 - **New coverage**. Instance add, remove and persistence, port normalisation, the three store-root branches per home and profile, three-state attribution, settingsFile following and hot reload, the desktop safe-mode confirmation loop, scan parser unit tests, and a 300-item data pipeline p95 of 2.25 ms; the six-state host-internal verdict and its shared repair path, the PowerShell spec table rebuilt onto the profile root, source-level checks for the three header modes and the overlay portal, and the plugin-page icon contract.
 - **Client export gate**. `tools/check-client-exports.mjs` executes the real bundle through a loader contract, compares the export key set exactly against eight entries, and runs one negative self-test for an early factory return and one for a renamed export. It is wired into `npm test`.
 - **Real machine**. Port-by-profile switching, shared-store filtering, the diff overlay, both themes and the 24-row and 2-row lists were checked on the isolated 3082 instance; the offline WebUI was checked on a temporary home for the flow bar, settings, scan suggestions and the error state.

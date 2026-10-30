@@ -54,7 +54,7 @@ dsh-undo-savepoint 的重要变更。日期为本地时间（UTC+8)。English ve
 
 ### 测试
 
-- **断言终值**。smoke 623、host-api 36、undo-server 35、home-resolution 3 分支、e2e 14，全部零失败；路由契约 22-2-3；check-size 1608817 字节。
+- **断言终值**。smoke 623、host-api 36、undo-server 35、home-resolution 3 分支、e2e 14，全部零失败；路由契约 22-2-3；check-size 1609337 字节。
 - **新增覆盖**。实例增删与持久化、端口归一化、home × profile 库根三分支、归属三态、settingsFile 跟随与热重读、桌面安全模式确认闭环、扫描解析纯函数、300 条数据管线 p95 2.25 毫秒；宿主内部包判定的六态与修复同源、PowerShell 规格表随 profile 根重建、对话头三档与浮层 portal 的源码级断言、插件页图标字段自洽。
 - **客户端导出面门禁**。新增 `tools/check-client-exports.mjs`，按 loader 契约执行真实 bundle，导出键集合精确比对 8 项，并对「factory 提前 return」与「导出改名」各做一条负向自测，接入 `npm test`。
 - **真机**。3082 隔离实例上验端口 × profile 切换、共享库过滤、对比浮层、深浅主题与 24 条 / 2 条列表；局外 WebUI 在临时 home 上验流程条、设置、扫描建议与错误态。
