@@ -2,63 +2,6 @@
 
 Notable changes to dsh-undo-savepoint. Dates are in local time (UTC+8). 中文版:[CHANGELOG.md](CHANGELOG.md)
 
-## [0.5.1-canary.1] - 2026-10-29
-
-A canary preview of 0.5.1, not published to npm. It lands DSH 0.2.1 line support, two-dimensional store switching by port and profile, and a visual rebuild of both the panel and the offline WebUI. The settings file is now shown from one source in the panel, the plugin detail page and the offline tool, and safe mode for the desktop profile is allowed after an explicit second confirmation.
-
-### Added
-
-- **Two-dimensional switching by port and profile**. An instance entry grows from `{name, home, profile, url}` to `{name, port, home}`, with profile as an independent second dimension. The offline tool picks a port first and then reads that port's web or desktop store; the in-host panel is pinned to its own port and switches between web and desktop. The store root resolves per home and profile: a scoped directory is used when present, a legacy flat store is read flat and labelled "Shared store", and a new home defaults to scoped.
-- **Flow bar and status bar**. Both interfaces lead with a flow bar of instance (port), profile and store. The status bar separates instance and port, profile and source, store scope, settings file path, sensitive mode, snapshot count and size, latest snapshot and safe mode with a middle dot. A change made in one entry point is visible in the other after a refresh or a focus.
-- **Shared-store filtering and three-state attribution**. Each row is attributed from the manifest profile, and profileMatch distinguishes a match, another profile and unknown attribution. A manifest without schemaVersion predates the field, so its attribution is treated as unknown and shown in both profile views. The default filters by the selected profile, and a "Show all shared-store snapshots" toggle reveals everything with per-row labels.
-- **Local instance scan**. Both ends gain a scan endpoint. On Windows it intersects the process table with the netstat listener table and lists local DSH ports, processes, the profile answered on each port and the snapshot count. It only produces suggestions and never writes instance settings; a timeout or a missing command returns an empty list.
-- **Rebuilt diff overlay**. The in-host diff now matches the offline one: files grouped into config, plugins and profile code, a left file list with added and removed counts, red and green lines on the right, a title with the snapshot id, collapsible files, Escape to close and a retry on error.
-- **Second confirmation for desktop-profile safe mode**. The default is still a refusal; after the user confirms the risk, files may be written, and the action takes a pre-safe-mode snapshot plus a backup of the profile package manifest first. The panel and the offline tool share the same endpoint and the same confirmation semantics.
-- **Settings file made explicit and hot-reloaded**. The panel, the plugin detail page and the offline WebUI show the same settingsFile. Switching a store loads the target instance's own settings, reads re-read it, saving re-reads it immediately, and writes merge the original object so instances, current and currentProfile survive.
-- **Three header modes**. A new headerMode setting accepts auto, full and compact and defaults to auto. Auto follows the width available to the conversation header: full width shows labels, a medium width keeps icons only, and a narrow width keeps undo plus one entry menu (undo, redo, create snapshot, chat undo, snapshot manager). Full always shows everything, compact always stays on the entry menu. Editable from the in-panel settings page and both settings endpoints; an invalid value falls back to auto.
-- **The plugin page shows its own icon**. The package manifest gains an icon field. On DSH 0.2.1 and later the plugin page and plugin cards show the same icon as the desktop shortcut.
-
-### Changed
-
-- **The instance shape changed**. Each instance entry gains an optional port, and a new currentProfile records the last selected profile. Old `{name, home, profile, url}` entries still load; without a port the store is read by home and no probe is made.
-- **The REST contract grows to 22 shared routes**. `POST /api/undo/scan` is new; instance switching accepts `{switch:{instance, profile}}` and keeps the current home when only the profile is given; safe-mode accepts profile and confirmDesktop. The route parity count moves from 21-2-3 to 22-2-3.
-- **The panel instance entry becomes port plus profile**. The single instance picker retires; the flow bar carries both levels, and instance management moves behind the plus button in the title bar.
-- **Store-root classification follows the home**. storeRoot, storeScope and sharedStore are computed for the current home; a flat root relocated by an environment variable still counts as shared.
-- **Offline WebUI header rearranged**. The port picker, profile segments and store badge form the flow bar, home and settingsFile are shown as muted text, and the former buttons are grouped into primary actions and a "More" menu.
-
-### Improved
-
-- **One vocabulary across both interfaces**. Undo, redo, compare, snapshot compare, restore to here, create snapshot, prune expired snapshots, safe mode, refresh, delete, close, instance, port, shared store, online, offline, legacy API and unknown profile are unified in Chinese and English across the client dictionary, both locale JSON files and the offline dictionary.
-- **Shared three-state skeleton and danger grading**. Empty, loading and error share an icon, one sentence and a primary action; restore is a neutral primary button, delete stays red, safe mode uses the warning colour, and a desktop target asks for confirmation first.
-- **Accessibility and density**. Focus rings, aria-labels and hover hints are added, the status bar is separated by middle dots, structural spacing lands on the 4-pixel scale, and both themes follow the host tokens.
-- **Offline instance management made visual**. Instance cards show port, home, online or offline, legacy API, available profiles and snapshot count; a port whose probed home differs from the configured one carries a warning with the probed home.
-
-### Fixed
-
-- **A flat shared store is no longer read as a single profile**. Relabelling alone was not enough; the list still mixed web and desktop rows. The default now filters by the selected profile, a shared store is labelled, unknown attribution forms its own group, and a toggle reveals the whole shared store.
-- **The settings file no longer drifts after a profile switch**. Switching an instance moves settingsFile to the target home; switching only the profile keeps the current home and is not dragged to another instance by current. Writes merge the original object so instances, current and currentProfile survive.
-- **Instance probing no longer overwrites the configured home**. When a port belongs to another instance, the list keeps the user's configured home and adds the probed home and a mismatch flag, so one instance's store is not shown as another's.
-- **Duplicate text in the panel status bar**. The shared-store label appears once and the settings file item is added; the snapshot-attribution column in the table is kept.
-- **Legacy snapshot attribution misread**. Manifests written before 0.5.0 have no schemaVersion and their profile field may be a default. Such snapshots are treated as unknown attribution and are no longer hidden by either profile view.
-- **`profiles/node_modules` was treated as a profile**. A real machine keeps a shared node_modules under `profiles/`, and the list counted it as a third profile, squeezing the flow bar into the store content; only web, desktop and directories carrying package.json or cordis*.yml are accepted now.
-- **Panel settings lacked options the offline page had**. Startup health check, DSH upgrade guard, the auto-safe-mode threshold, the guard handling mode and the guard shortcut were missing from the panel; both surfaces now share the same fields and save path.
-- **The check no longer reads a healthy setup as an incident (#49)**. When a copy of a host-internal package sits in the profile root, provenance and version are judged first: declared in the manifest, linked into the host installation tree, or matching the host version all pass, and only a version mismatch or an unreadable version reports an error. The detail carries the copy version, the host version and the version source, and the repair shares the same verdict, so a link into the host tree is never renamed.
-- **The offline tool no longer points the spec table at the wrong root after a profile switch (#51)**. Once settings.profileName takes effect, the PowerShell tool rebuilds its file list against the new root instead of keeping the five profile entries on `profiles\web`. With no profileName and exactly one profile holding `cordis.patch.yml`, that profile is adopted with a notice.
-- **Overlays are no longer clipped in narrow windows (#52)**. The snapshot panel and the chat-undo overlay now render through a portal on body, so the mask covers the viewport and the panel centres on it instead of being clipped by the host header container. The panel also becomes a bottom drawer, wide tables scroll horizontally, and the narrow header collapses to icons plus the entry menu.
-
-### Security
-
-- **Desktop safe mode still needs an explicit confirmation**. A request without confirmDesktop is refused before any write; a confirmed request takes a pre-safe-mode snapshot before touching files. The active state carries a home fingerprint and becomes stale after a home switch.
-- **Port probing is read-only and loopback-only**. The scan and instance probes request only the local status endpoint, time out after 1.2 seconds and degrade silently on failure; nothing is exposed to the LAN and nothing is written to settings.
-- **Proxy boundaries unchanged**. The in-host loopback proxy still allows loopback addresses only, a fixed action list, no redirects and an 8-second timeout, and never logs or echoes the token.
-
-### Tests
-
-- **Final assertion counts**. smoke 623, host-api 36, undo-server 35, home-resolution 3 branches and e2e 14, all with zero failures; route parity 22-2-3; check-size 1609337 bytes.
-- **New coverage**. Instance add, remove and persistence, port normalisation, the three store-root branches per home and profile, three-state attribution, settingsFile following and hot reload, the desktop safe-mode confirmation loop, scan parser unit tests, and a 300-item data pipeline p95 of 2.25 ms; the six-state host-internal verdict and its shared repair path, the PowerShell spec table rebuilt onto the profile root, source-level checks for the three header modes and the overlay portal, and the plugin-page icon contract.
-- **Client export gate**. `tools/check-client-exports.mjs` executes the real bundle through a loader contract, compares the export key set exactly against eight entries, and runs one negative self-test for an early factory return and one for a renamed export. It is wired into `npm test`.
-- **Real machine**. Port-by-profile switching, shared-store filtering, the diff overlay, both themes and the 24-row and 2-row lists were checked on the isolated 3082 instance; the offline WebUI was checked on a temporary home for the flow bar, settings, scan suggestions and the error state.
-
 ## [0.5.0] - 2026-10-20
 
 ### Added
