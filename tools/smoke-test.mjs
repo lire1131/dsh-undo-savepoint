@@ -1393,10 +1393,12 @@ console.log('== B4b. patch manifest: multi-version substrings + client declarati
   // W42：engines 追加 0.2.0-rc.2 段（维持 OR 串风格，不重构）。
   const dshSegs = String(pkg.engines.dsh).split('||').map((s) => s.trim());
   // W56：末段推进到 0.2.1 线，历史八段逐字保留（rc.3 适配）。
+  // W81：末段再推进到 0.2.2 线（0.2.2-rc.1 适配，2026-11-06）。
   const w42Base = ['>=0.0.1-0', '>=0.1.0-rc.2', '>=0.1.1-rc.1', '>=0.1.2-alpha.2', '>=0.1.2-rc.1', '>=0.1.5-rc.1', '>=0.1.5-rc.2', '>=0.2.0-rc.2'];
   check(
-    typeof pkg.engines.dsh === 'string' && dshSegs[dshSegs.length - 1] === '>=0.2.1-0' && JSON.stringify(dshSegs.slice(0, -1)) === JSON.stringify(w42Base),
-    'W42: engines.dsh 末段为 >=0.2.1-0 且原有八段逐字保留（OR 串未重构）',
+    typeof pkg.engines.dsh === 'string' && dshSegs[dshSegs.length - 1] === '>=0.2.2-0'
+      && JSON.stringify(dshSegs.slice(0, -1)) === JSON.stringify([...w42Base, '>=0.2.1-0']),
+    'W42: engines.dsh 末段为 >=0.2.2-0 且前九段逐字保留（OR 串未重构）',
   );
   check(pkg.version === '0.5.0', 'W42: package.json version 为 0.5.0（stable 定稿）');
   const readmes42 = [
@@ -1420,8 +1422,8 @@ console.log('== B4b. patch manifest: multi-version substrings + client declarati
   // 四条 inject 包名逐条存在且版本同为 0.2.1-rc.3，差异表为空；`dsh --version` 实测 0.2.1-rc.3。
   // 断言只认包自身声明与注册面，不认本机安装路径（换机器仍可跑）。
   check(
-    typeof pkg.engines.dsh === 'string' && dshSegs.length === 9 && dshSegs[dshSegs.length - 1] === '>=0.2.1-0',
-    'W56: engines.dsh 共九段且末段为 >=0.2.1-0（新增 0.2.1 线，历史段未删）',
+    typeof pkg.engines.dsh === 'string' && dshSegs.length === 10 && dshSegs[dshSegs.length - 1] === '>=0.2.2-0',
+    'W81: engines.dsh 共十段且末段为 >=0.2.2-0（新增 0.2.2 线，历史段未删）',
   );
   check(
     pkg.dsh.client.inject.length === 4 && new Set(pkg.dsh.client.inject).size === 4
@@ -3572,6 +3574,33 @@ await rm(root, { recursive: true, force: true });
     check(noop50.moved === 0 && noop50.text === cur50Pure, 'W50: 纯函数在差集为空时原文逐字返回');
   }
 
+  // W88: #53 YAML 尾注释。旧正则 `(\S+)\s*$` 把行尾锚死在 id 后，`- id: x # c` 整条失配，
+  // W50 把已在的条目算成缺失；修复侧还会把同 id 再搬回一条，宿主会以 duplicate loader
+  // entry id 拒绝启动。这里钉解析六态与修复侧不搬回。
+  console.log('== W88. #53 trailing YAML comments in `- id:` entries ==');
+  {
+    const health88 = await import('../lib/health.mjs');
+    const NL88 = String.fromCharCode(10);
+    const ids88 = (line) => health88.collectPatchEntryIds(line + NL88).topKeys;
+    check(JSON.stringify(ids88('- id: plain-id')) === '["plain-id"]',
+      'W88: 无注释的 id 照常解析');
+    check(JSON.stringify(ids88('- id: space-comment # magpie')) === '["space-comment"]',
+      'W88: 空格加 # 尾注释按注释处理');
+    check(JSON.stringify(ids88('- id: tab-comment\t# tab')) === '["tab-comment"]',
+      'W88: 制表符加 # 尾注释按注释处理');
+    check(JSON.stringify(ids88('- id: has#hash')) === '["has#hash"]',
+      'W88: # 紧贴 id 不构成注释，id 完整保留');
+    check(JSON.stringify(ids88('  - id: indented # c')) === '["indented"]',
+      'W88: 缩进条目的尾注释同样识别');
+    check(JSON.stringify(health88.collectPatchEntryIds('- name: not-an-id' + NL88)) === '{"topKeys":[],"insertIds":[]}',
+      'W88: 非 id 行仍不产生条目名');
+    const cur88 = ['- id: keep-me # note', '  name: x', ''].join(NL88);
+    const bak88 = ['- id: keep-me', '  name: x', ''].join(NL88);
+    const merged88 = health88.mergePatchEntries(cur88, bak88);
+    check(merged88.moved === 0 && merged88.text === cur88,
+      'W88: 修复侧不再把带注释的已有条目当缺失搬回（moved=0 且原文逐字不动）');
+  }
+
   // W09: 会话普查——浅层计数 + 零字节异常 + 深层结构分类
   {
     const sessDir = join(homeW, 'sessions', 'census-test');
@@ -3900,6 +3929,287 @@ console.log('== W68. #49 six-state host-internal judgement ==');
       && diffDetail68.includes('install-anchor') && diffDetail68.includes('deps-carry'),
     'W68: detail carries the local/host version triple (install-anchor) and the culprit plugin');
   await rm(root68b, { recursive: true, force: true });
+}
+
+// ── W89：#49 A 组——realpath 失败时改读链接文本（宿主树内 / 桌面结构 / 根外）──────────
+// 反向敏感：修复前 `dangling-under` 与 `structural-only` 都会落 shadow 并报 err。
+// 断言只看产品判据（classifyHostInternal 的 kind 与 linkState），不看 Node 对 junction 的归类。
+console.log('== W89. #49 host-tree links exempt when realpath fails ==');
+{
+  const { execFile: execFile89 } = await import('node:child_process');
+  const libUrl89 = (f) => pathToFileURL(join(dirname(fileURLToPath(import.meta.url)), '..', 'lib', f)).href;
+  const root89 = await mkdtemp(join(tmpdir(), 'dsh-undo-w89-'));
+  const host89 = join(root89, 'resources', 'app', 'dsh');   // DSH_ROOT，路径含 resources 段
+  const home89 = join(root89, 'home');
+  const web89 = join(home89, 'profiles', 'web');
+  const scope89 = join(web89, 'node_modules', '@deepseek-ai');
+  const outside89 = join(root89, 'outside');
+  const phantom89 = join(root89, 'phantom');
+  const writePkg89 = async (dir, name, version) => {
+    await mkdir(dir, { recursive: true });
+    await writeFile(join(dir, 'package.json'), JSON.stringify({ name, version }) + '\n', 'utf8');
+  };
+  await writePkg89(host89, '@deepseek-ai/dsh', '0.0.0-w89');
+  await mkdir(join(host89, 'lib'), { recursive: true });
+  await writeFile(join(host89, 'lib', 'bin.js'), '// product tree stand-in (W89)\n', 'utf8');
+  const live89 = 'live-link';
+  await writePkg89(join(host89, 'node_modules', '@deepseek-ai', live89), `@deepseek-ai/${live89}`, '9.0.0');
+  await mkdir(scope89, { recursive: true });
+  await writeFile(join(web89, 'package.json'), JSON.stringify({
+    name: 'dsh-profile-web',
+    dependencies: { 'deps-carry': '0.1.0' },
+    dsh: { profile: { bundles: [], patchReload: 'live' } },
+  }, null, 2) + '\n', 'utf8');
+  await writePkg89(join(web89, 'node_modules', 'deps-carry'), 'deps-carry', '0.1.0');
+  const linkType89 = process.platform === 'win32' ? 'junction' : 'dir';
+  // 1) 目标在宿主树内但目录被移走：realpath 失败，链接文本落在根内。
+  await symlink(join(host89, 'node_modules', '@deepseek-ai', 'ghost-under'), join(scope89, 'dangling-under'), linkType89);
+  // 2) 目标在宿主树外且不存在：realpath 失败，链接文本也在根外。
+  await symlink(join(outside89, 'ghost-out'), join(scope89, 'dangling-out'), linkType89);
+  // 3) 目标在根外但路径含桌面产品树段序列：只能靠结构兜底命中。
+  await symlink(join(phantom89, 'resources', 'app', 'dsh', 'node_modules', '@deepseek-ai', 'structural-only'), join(scope89, 'structural-only'), linkType89);
+  // 4) 目标可读的宿主树链接：回归。
+  await symlink(join(host89, 'node_modules', '@deepseek-ai', live89), join(scope89, live89), linkType89);
+  await mkdir(join(home89, 'snap', 'manual'), { recursive: true });
+  await mkdir(join(home89, 'snap', 'auto'), { recursive: true });
+
+  const runner89 = join(root89, 'w89-runner.mjs');
+  await writeFile(runner89, [
+    "const { promises: fs } = await import('node:fs');",
+    "const { join } = await import('node:path');",
+    `const { buildConfig } = await import(${JSON.stringify(libUrl89('base.mjs'))});`,
+    `const health = await import(${JSON.stringify(libUrl89('health.mjs'))});`,
+    'const profileDir = process.env.W89_PROFILE;',
+    "const scope = join(profileDir, 'node_modules', '@deepseek-ai');",
+    "const pkg = JSON.parse(await fs.readFile(join(profileDir, 'package.json'), 'utf8'));",
+    "const names = ['dangling-under', 'dangling-out', 'structural-only', 'live-link'];",
+    'const kinds = {};',
+    'for (const n of names) kinds[n] = await health.classifyHostInternal(profileDir, n, pkg);',
+    'const home = process.env.W89_HOME;',
+    "const cfg = buildConfig({ profileName: 'web', homeDir: home, profileDir, manualDir: join(home, 'snap', 'manual'), autoDir: join(home, 'snap', 'auto'), pluginDirs: [] });",
+    'const report = await health.runDoctor(cfg);',
+    "const hits = report.checks.filter((c) => c.code === 'pre-host-internal').map((c) => ({ name: c.name, level: c.level, detail: c.detail }));",
+    'const fixed = await health.runDoctorFix(cfg);',
+    "const applied = fixed.applied.filter((a) => a.code === 'pre-host-internal').map((a) => ({ target: a.target, ok: a.ok }));",
+    'const exists = async (p) => { try { await fs.access(p); return true; } catch { return false; } };',
+    "console.log(JSON.stringify({ kinds, hits, applied, underExists: await exists(join(scope, 'dangling-under')), structuralExists: await exists(join(scope, 'structural-only')), outExists: await exists(join(scope, 'dangling-out')) }));",
+    'process.exit(0);',
+    '',
+  ].join('\n'), 'utf8');
+  const r89 = await new Promise((resolve) => {
+    execFile89(process.execPath, [runner89], {
+      timeout: 120000,
+      env: (() => {
+        const e = { ...process.env, DSH_ROOT: host89, DSH_HOME: home89, W89_HOME: home89, W89_PROFILE: web89, DSH_UNDO_LANG: 'en', DSH_UNDO_NO_DESKTOP: '1' };
+        delete e.DSH_PROFILE; delete e.DSH_UNDO_PROFILE; delete e.DSH_UNDO_SETTINGS; delete e.DSH_UNDO_ROOT;
+        return e;
+      })(),
+    }, (err, stdout, stderr) => resolve({
+      code: err ? (err.code ?? 1) : 0,
+      json: (() => { try { return JSON.parse(String(stdout).trim()); } catch { return null; } })(),
+      stderr: String(stderr ?? ''),
+    }));
+  });
+  const j89 = r89.json ?? {};
+  if (!r89.json) console.error(`W89: child probe produced no JSON (code ${r89.code}): ${r89.stderr.slice(0, 800)}`);
+  const k89 = (n) => j89.kinds?.[n] ?? {};
+  const hit89 = (n) => (j89.hits ?? []).filter((h) => String(h.name ?? '').includes(n));
+  check(k89('dangling-under').kind === 'host-link' && k89('dangling-under').linkState === 'unresolved'
+      && hit89('dangling-under').length === 0,
+    'W89: 目标不可解析但链接文本落在宿主树内的 junction 判 host-link 且不报错');
+  check(k89('structural-only').kind === 'host-link' && k89('structural-only').linkState === 'structural'
+      && hit89('structural-only').length === 0,
+    'W89: 链接文本含桌面产品树段序列的条目按结构兜底判 host-link');
+  check(k89('dangling-out').kind === 'shadow' && hit89('dangling-out').some((h) => h.level === 'err')
+      && String(hit89('dangling-out')[0]?.detail ?? '').includes('ghost-out'),
+    'W89: 目标在宿主树外且不可解析的链接仍判 shadow 报 err，详情带链接文本');
+  check(k89('live-link').kind === 'host-link' && k89('live-link').linkState === 'resolved',
+    'W89: 目标可读的宿主树链接仍判 host-link（回归）');
+  check((j89.hits ?? []).length === 1 && hit89('dangling-out').length === 1,
+    `W89: 四条链接里只有根外悬空那条产生检查项（实得 ${(j89.hits ?? []).length} 条）`);
+  check(j89.underExists === true && j89.structuralExists === true && j89.outExists === false
+      && !(j89.applied ?? []).some((a) => String(a.target ?? '').includes('dangling-under') || String(a.target ?? '').includes('structural-only'))
+      && (j89.applied ?? []).some((a) => String(a.target ?? '').includes('dangling-out')),
+    'W89: 修复侧不改名 host-link，只隔离根外悬空链接');
+  await rm(root89, { recursive: true, force: true });
+}
+
+// ── W90：#49 共享树 profiles/node_modules 的宿主内部包（只报 warn，不改名）────────────
+// 反向敏感：修复前这一段不存在，共享树里的异版本副本零检查项（2026-10-27 回复里承认的盲区）。
+console.log('== W90. #49 shared tree host-internal scan ==');
+{
+  const { execFile: execFile90 } = await import('node:child_process');
+  const libUrl90 = (f) => pathToFileURL(join(dirname(fileURLToPath(import.meta.url)), '..', 'lib', f)).href;
+  const root90 = await mkdtemp(join(tmpdir(), 'dsh-undo-w90-'));
+  const host90 = join(root90, 'host');
+  const writePkg90 = async (dir, name, version) => {
+    await mkdir(dir, { recursive: true });
+    await writeFile(join(dir, 'package.json'), JSON.stringify({ name, version }) + '\n', 'utf8');
+  };
+  await writePkg90(host90, '@deepseek-ai/dsh', '0.0.0-w90');
+  await mkdir(join(host90, 'lib'), { recursive: true });
+  await writeFile(join(host90, 'lib', 'bin.js'), '// product tree stand-in (W90)\n', 'utf8');
+  // 宿主侧同名包 9.0.0，共享树放 1.0.0 即为异版本
+  for (const n of ['shared-shadow', 'shared-link', 'both-shadow']) {
+    await writePkg90(join(host90, 'node_modules', '@deepseek-ai', n), `@deepseek-ai/${n}`, '9.0.0');
+  }
+  const homeA90 = join(root90, 'homeA');
+  const webA90 = join(homeA90, 'profiles', 'web');
+  const shared90 = join(homeA90, 'profiles', 'node_modules', '@deepseek-ai');
+  await writePkg90(webA90, 'dsh-profile-web', '0.0.0', {});
+  await writeFile(join(webA90, 'package.json'), JSON.stringify({
+    name: 'dsh-profile-web', dependencies: { 'deps-carry': '0.1.0' }, dsh: { profile: { bundles: [], patchReload: 'live' } },
+  }, null, 2) + '\n', 'utf8');
+  await writePkg90(join(webA90, 'node_modules', 'deps-carry'), 'deps-carry', '0.1.0');
+  await writePkg90(join(shared90, 'shared-shadow'), '@deepseek-ai/shared-shadow', '1.0.0');
+  await symlink(join(host90, 'node_modules', '@deepseek-ai', 'shared-link'), join(shared90, 'shared-link'), process.platform === 'win32' ? 'junction' : 'dir');
+  await writePkg90(join(shared90, 'both-shadow'), '@deepseek-ai/both-shadow', '1.0.0');
+  // profile 根同名实体副本：应与共享树那条各报一条，级别不同
+  await writePkg90(join(webA90, 'node_modules', '@deepseek-ai', 'both-shadow'), '@deepseek-ai/both-shadow', '1.0.0');
+  await mkdir(join(homeA90, 'snap', 'manual'), { recursive: true });
+  await mkdir(join(homeA90, 'snap', 'auto'), { recursive: true });
+  // 对照 home：没有 profiles/node_modules
+  const homeB90 = join(root90, 'homeB');
+  const webB90 = join(homeB90, 'profiles', 'web');
+  await writePkg90(webB90, 'dsh-profile-web', '0.0.0', {});
+  await writeFile(join(webB90, 'package.json'), JSON.stringify({
+    name: 'dsh-profile-web', dependencies: {}, dsh: { profile: { bundles: [], patchReload: 'live' } },
+  }, null, 2) + '\n', 'utf8');
+  await mkdir(join(homeB90, 'snap', 'manual'), { recursive: true });
+  await mkdir(join(homeB90, 'snap', 'auto'), { recursive: true });
+
+  const runner90 = join(root90, 'w90-runner.mjs');
+  await writeFile(runner90, [
+    `const { buildConfig } = await import(${JSON.stringify(libUrl90('base.mjs'))});`,
+    `const health = await import(${JSON.stringify(libUrl90('health.mjs'))});`,
+    "const mk = (home, profileDir) => buildConfig({ profileName: 'web', homeDir: home, profileDir, manualDir: home + (process.platform === 'win32' ? '\\\\snap\\\\manual' : '/snap/manual'), autoDir: home + (process.platform === 'win32' ? '\\\\snap\\\\auto' : '/snap/auto'), pluginDirs: [] });",
+    'const repA = await health.runDoctor(mk(process.env.W90_HOME_A, process.env.W90_PROFILE_A));',
+    'const repB = await health.runDoctor(mk(process.env.W90_HOME_B, process.env.W90_PROFILE_B));',
+    "const pick = (rep, code) => rep.checks.filter((c) => c.code === code).map((c) => ({ name: c.name, level: c.level, fixable: c.fixable === true, detail: c.detail }));",
+    "console.log(JSON.stringify({ sharedA: pick(repA, 'pre-shared-host-internal'), hostA: pick(repA, 'pre-host-internal'), sharedB: pick(repB, 'pre-shared-host-internal') }));",
+    'process.exit(0);',
+    '',
+  ].join('\n'), 'utf8');
+  const r90 = await new Promise((resolve) => {
+    execFile90(process.execPath, [runner90], {
+      timeout: 120000,
+      env: (() => {
+        const e = { ...process.env, DSH_ROOT: host90, DSH_HOME: homeA90, W90_HOME_A: homeA90, W90_PROFILE_A: webA90, W90_HOME_B: homeB90, W90_PROFILE_B: webB90, DSH_UNDO_LANG: 'en', DSH_UNDO_NO_DESKTOP: '1' };
+        delete e.DSH_PROFILE; delete e.DSH_UNDO_PROFILE; delete e.DSH_UNDO_SETTINGS; delete e.DSH_UNDO_ROOT;
+        return e;
+      })(),
+    }, (err, stdout, stderr) => resolve({
+      code: err ? (err.code ?? 1) : 0,
+      json: (() => { try { return JSON.parse(String(stdout).trim()); } catch { return null; } })(),
+      stderr: String(stderr ?? ''),
+    }));
+  });
+  const j90 = r90.json ?? {};
+  if (!r90.json) console.error(`W90: child probe produced no JSON (code ${r90.code}): ${r90.stderr.slice(0, 800)}`);
+  const shared90Hits = (n) => (j90.sharedA ?? []).filter((h) => String(h.name ?? '').includes(n));
+  check(shared90Hits('shared-shadow').length === 1
+      && shared90Hits('shared-shadow')[0].level === 'warn'
+      && shared90Hits('shared-shadow')[0].fixable === false,
+    'W90: 共享树里的异版本实体副本报 warn 且不标 fixable');
+  check(shared90Hits('shared-link').length === 0,
+    'W90: 共享树里指向宿主树的链接不报（host-link 豁免同源）');
+  check(shared90Hits('both-shadow').length === 1
+      && (j90.hostA ?? []).filter((h) => String(h.name ?? '').includes('both-shadow')).some((h) => h.level === 'err'),
+    'W90: profile 根与共享树同名副本各报一条，profile 侧 err、共享树侧 warn');
+  check((j90.sharedB ?? []).length === 0,
+    `W90: 没有 profiles/node_modules 的 home 零检查项（实得 ${(j90.sharedB ?? []).length} 条）`);
+  await rm(root90, { recursive: true, force: true });
+}
+
+// ── W84/W85/W86：安装期环境自检（规划四 2.3 的 A 与 B 两个落点）─────────────────
+// 反向敏感：修复前没有检测库、没有安装钩子、包装器也不做检查。
+console.log('== W84. install-time environment detection ==');
+{
+  const env84 = await import('./env-check.mjs');
+  const base84 = { platform: 'win32', powershellOk: true, homeWritable: true, homeDir: 'C:\\tmp\\dsh-home' };
+  const ok84 = await env84.detectEnv({ ...base84, nodeText: 'v24.19.0' });
+  check(ok84.blocking.length === 0 && ok84.advisory.length === 0,
+    'W84: node 24.19 与 PowerShell 齐备时零阻断零提示');
+  const hostOld84 = await env84.detectEnv({ ...base84, nodeText: 'v22.23.4' });
+  check(hostOld84.blocking.length === 0 && hostOld84.advisory.some((a) => a.code === 'node-host-old'),
+    'W84: node 22 不阻断，只报宿主 24.9 提示');
+  const old84 = await env84.detectEnv({ ...base84, nodeText: 'v18.20.0' });
+  check(old84.blocking.some((b) => b.code === 'node-old'),
+    'W84: node 18 判阻断');
+  const miss84 = await env84.detectEnv({ ...base84, nodeText: null });
+  check(miss84.blocking.some((b) => b.code === 'node-missing'),
+    'W84: node 缺失判阻断');
+  const nops84 = await env84.detectEnv({ ...base84, nodeText: 'v24.19.0', powershellOk: false });
+  check(nops84.blocking.length === 0 && nops84.advisory.some((a) => a.code === 'pwsh-missing'),
+    'W84: PowerShell 缺失只提示不阻断');
+  const nohome84 = await env84.detectEnv({ ...base84, nodeText: 'v24.19.0', homeWritable: false });
+  check(nohome84.blocking.some((b) => b.code === 'home-unwritable'),
+    'W84: DSH home 不可写判阻断');
+  check(env84.parseNodeVersion('v22.23.4').join('.') === '22.23.4' && env84.parseNodeVersion('junk') === null,
+    'W84: 版本解析对 v 前缀与坏文本各一条');
+}
+
+console.log('== W85. install preflight entry ==');
+{
+  const { execFile: execFile85 } = await import('node:child_process');
+  const preflight85 = join(dirname(fileURLToPath(import.meta.url)), 'install-preflight.mjs');
+  const run85 = (extra) => new Promise((resolve) => {
+    execFile85(process.execPath, [preflight85], {
+      timeout: 30000,
+      env: (() => {
+        const e = { ...process.env };
+        delete e.DSH_UNDO_SKIP_ENV_CHECK;
+        Object.assign(e, { DSH_UNDO_LANG: 'en' }, extra);
+        return e;
+      })(),
+    }, (err, stdout, stderr) => resolve({
+      code: err ? (err.code ?? 1) : 0,
+      out: `${stdout}${stderr}`,
+    }));
+  });
+  const fakeOk = '{"node":"ok","powershell":"ok","home":"ok"}';
+  const fakeMissing = '{"node":"missing","powershell":"ok","home":"ok"}';
+  const skip85 = await run85({ DSH_UNDO_SKIP_ENV_CHECK: '1' });
+  check(skip85.code === 0 && /skipped/i.test(skip85.out),
+    'W85: DSH_UNDO_SKIP_ENV_CHECK=1 跳过自检并退出 0');
+  const pass85 = await run85({ DSH_UNDO_ENVCHECK_FAKE: fakeOk });
+  check(pass85.code === 0 && /No blocking issue/i.test(pass85.out),
+    'W85: 无阻断项时退出 0 并打印结论');
+  const cont85 = await run85({ DSH_UNDO_ENVCHECK_FAKE: fakeMissing });
+  check(cont85.code === 0 && /Non-interactive environment/i.test(cont85.out),
+    'W85: 非交互带着阻断项按默认继续，退出 0');
+  const strict85 = await run85({ DSH_UNDO_ENVCHECK_FAKE: fakeMissing, DSH_UNDO_LANG: 'en' });
+  check(strict85.code === 0, 'W85: 非 strict 非交互不中止');
+  const abort85 = await new Promise((resolve) => {
+    execFile85(process.execPath, [preflight85, '--strict'], {
+      timeout: 30000,
+      env: (() => {
+        const e = { ...process.env };
+        delete e.DSH_UNDO_SKIP_ENV_CHECK;
+        Object.assign(e, { DSH_UNDO_LANG: 'en', DSH_UNDO_ENVCHECK_FAKE: fakeMissing });
+        return e;
+      })(),
+    }, (err) => resolve(err ? (err.code ?? 1) : 0));
+  });
+  check(abort85 === 2, `W85: --strict 遇阻断项退出 2（实得 ${abort85}）`);
+  const zh85 = await run85({ DSH_UNDO_ENVCHECK_FAKE: fakeOk, DSH_UNDO_LANG: 'zh' });
+  check(zh85.code === 0 && zh85.out.includes('安装前环境自检'),
+    'W85: DSH_UNDO_LANG=zh 输出中文报告');
+}
+
+console.log('== W86. wrapper hook + docs ==');
+{
+  const pkg86 = JSON.parse(await readFile(fileURLToPath(new URL('../package.json', import.meta.url)), 'utf8'));
+  check(pkg86.scripts?.prepare === 'node tools/install-preflight.mjs'
+    && pkg86.scripts?.postinstall === 'node tools/install-preflight.mjs',
+    'W86: prepare 与 postinstall 都指向 install-preflight.mjs');
+  const wrap86 = await readFile(fileURLToPath(new URL('./dsh-plugin.ps1', import.meta.url)), 'utf8');
+  check(wrap86.includes('install-preflight.mjs') && wrap86.includes('--strict'),
+    'W86: 包装器在调用 dsh plugin 前跑同一入口的 --strict 模式');
+  const zh86 = await readFile(fileURLToPath(new URL('../README.md', import.meta.url)), 'utf8');
+  const en86 = await readFile(fileURLToPath(new URL('../README.en.md', import.meta.url)), 'utf8');
+  check(zh86.includes('DSH_UNDO_SKIP_ENV_CHECK') && en86.includes('DSH_UNDO_SKIP_ENV_CHECK'),
+    'W86: 双语 README 都写了跳过开关与自检行为');
 }
 
 // ── W49：脱敏清单扩充（issue #39 SEC）────────────────────────────────────────

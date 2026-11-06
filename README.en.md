@@ -1,4 +1,4 @@
-# dsh-undo-savepoint — Security caretaker for DSH (undo / rollback / crash rescue)
+# dsh-undo-savepoint Security caretaker for DSH (undo / rollback / crash rescue)
 
 [![awesome · DSH plugin](https://awesome-dsh-plugin.com/badge.svg)](https://awesome-dsh-plugin.com)
 [![CI](https://github.com/lire1131/dsh-undo-savepoint/actions/workflows/ci.yml/badge.svg)](https://github.com/lire1131/dsh-undo-savepoint/actions/workflows/ci.yml)
@@ -7,44 +7,34 @@
 
 **A security caretaker for [DeepSeek Harness (DSH)](https://github.com/deepseek-ai/deepseek-harness): every settings change is auto-snapshotted, with one-click undo / redo / restore to any version; proactive health checks, upgrade guarding, and crash rescue; and when DSH won't even boot, the offline WebUI / GUI / CLI still work.**
 
-The caretaker checks proactively and speaks only when something is wrong. The first health check completes 30 seconds after startup; after a crash it names the last-known-good snapshot to restore; and when the DSH version changes it takes an upgrade-insurance snapshot before letting the session continue.
+It checks proactively and speaks only when something is wrong: the first health check completes 30 seconds after startup, a crash names the last-known-good snapshot, and a DSH version change takes an upgrade-insurance snapshot first.
 
 ## Preview
 
-| Conversation header: iconized Undo / Redo / Snapshot / Message-undo buttons + auto-snapshot badge (24 snapshots · 3h ago) |
+| Offline WebUI: port → Profile → snapshot store flow bar, shared store split by owner profile, per-row Compare / Restore to here / Edit note / Delete |
 |---|
-| ![header](https://cdn.jsdelivr.net/gh/lire1131/dsh-undo-savepoint@master/docs/shots/webui-header.png) |
+| ![webui](https://cdn.jsdelivr.net/gh/lire1131/dsh-undo-savepoint@master/docs/shots/webui-main.en.png) |
 
-| Offline WebUI: crash banner + Undo / Redo / Safe mode / Diagnose / Message undo / Settings — works even when DSH won't boot (snapshot diff & settings: see [Offline tools](#offline-tools-work-even-when-dsh-wont-boot)) |
-|---|
-| ![gui](https://cdn.jsdelivr.net/gh/lire1131/dsh-undo-savepoint@master/docs/shots/gui-main.en.png) |
-
-## The caretaker
-
-| Duty | Capability |
+| Snapshot diff: file navigation with add/remove counts, red/green lines, sensitive values redacted | Settings: instances and snapshot policy |
 |---|---|
-| Startup health check | 30 seconds after startup it inspects session directories, tolerance patches, snapshot coverage and disk usage, alerting only on findings |
-| Crash rescue | When DSH cannot boot at all, SAFE MODE keeps only this plugin so boot is guaranteed; crash attribution names the last-known-good snapshot for one-click restore |
-| Session doctor | undo_scan repairs single-frame layout violations and seq overlaps in session files; what it cannot repair is quarantined, originals untouched |
-| Upgrade guard | On a detected DSH version change it takes an upgrade-insurance snapshot, then the first post-upgrade boot produces a compatibility and session-census report |
-| Snapshots stay secret | .env, credentials and home-level settings are redacted in snapshots, real values live only in the local vault, export bundles leak nothing |
-| Tolerance patches | Runtime fallbacks for known defect points of past DSH builds; they simply stop matching once upstream fixes land, with no functional impact |
+| ![diff](https://cdn.jsdelivr.net/gh/lire1131/dsh-undo-savepoint@master/docs/shots/webui-diff.en.png) | ![settings](https://cdn.jsdelivr.net/gh/lire1131/dsh-undo-savepoint@master/docs/shots/webui-settings.en.png) |
 
 ## Core capabilities
 
 | Capability | What it does |
 |---|---|
-| **Config + plugin-code rollback** | Snapshots cover config files AND user-plugin code trees — any broken edit is undoable (incl. pure code incidents like the whale-kit `yield*` crash); undo / redo / restore-to-any-version from the WebUI, chat or offline CLI |
-| **Secret redaction + local vault** | `.env` / credentials enter snapshots auto-redacted (structure preserved) — exported ZIPs are safe to share; real values live in a local vault, and local rollbacks restore them fully |
-| **Time Machine timeline** | Snapshot timeline visualization + file-level diff (added/removed line highlighting, per-file navigation, prev/next) + one-click rollback |
-| **Message-level undo** | Records workspace file changes per AI message; say "undo what the last message did" and exactly that is rolled back (before-content restored, new files deleted). Tracked dirs configurable in Settings |
-| **One-click SAFE MODE** | When DSH cannot boot at all, temporarily disables every user plugin except the undo system so it always boots; auto-snapshots + config backup on entry, one-click exit (profile/home dual-level patches backed up & restored; bundle entries that would fail the loader's hard checks are neutralized with the original `package.json` backed up separately and fully restored on exit) |
-| **Crash attribution** | After an abnormal exit, classifies the crash by log signature (`session-corrupt` / `bundle-check` / `patch-tree`), names the concrete last-known-good snapshot and offers a one-click rollback — no guessing |
-| **Session-file scan & repair** | `undo_scan` scans `<home>/sessions/**/session.jsonl.zstd`: single-frame layout violations (the 8/18 crash root cause) and synthetic-closer seq overlap (interrupted-turn seq overlap after undo/snapshot restores) are repaired in place (original kept as `.bak` + quarantine copy) with triple verification; undecodable files are only isolated, never touched. Offline via `dsh-undo.ps1 scan [--fix]` (requires Node ≥22.15; degrades to a notice on Node 20) |
-| **One-click diagnostic & boot preflight** | Store side: snapshot store writability, blob integrity (missing/orphan), settings health, snapshot scale. Boot side preflights the hard failures that kill DSH before any plugin is mounted: profile manifest BOM/JSON/shape, every declared `dsh.profile.bundles` entry resolvable, `patchReload` value, `link:` junction targets, duplicate loader ids in patch files, unfinished previous boot. Structured ok/warn/error report; repairable checks are marked `[fixable]` and can be repaired in one step (`undo_doctor fix=true` in chat, `dsh-undo.ps1 doctor -Fix` offline, or the "Repair fixable" button in the standalone WebUI diagnostic panel), with a manual snapshot taken before and an automatic re-check after |
-| **Safe cross-machine migration** | Restore preflights missing plugins and warns clearly; snapshots export/import as one-click ZIP, optional AES-256-GCM encryption (see [docs/migration.en.md](docs/migration.en.md)) |
-| **Offline emergency kit** | WebUI + GUI window + CLI + auto-created desktop shortcut: undo / restore / SAFE MODE / crash banner / rollback log — everything works when DSH is down |
-| **Auto slimming** | Orphan-blob GC (`undo_compact`) frees disk; size gates keep the plugin tiny (~0.6 MB) with zero runtime dependencies |
+| **Config + plugin-code rollback** | Snapshots cover config files and user-plugin code trees; undo / redo / restore any version from the WebUI, chat or offline CLI. |
+| **Message-level undo** | Rolls back workspace file changes per AI message or 60s batch, without git or session storage. |
+| **Secret redaction** | `.env` and credentials are redacted in snapshots, real values live only in the local vault, exported ZIPs leak nothing. |
+| **One-click SAFE MODE** | When DSH cannot boot, only this plugin stays enabled so boot is guaranteed; snapshots and profile/home patches are backed up first. |
+| **Crash attribution** | Classifies the crash by log signature and names the last-known-good snapshot for one-click rollback. |
+| **Session-file repair** | `undo_scan` repairs single-frame layout violations and seq overlaps; what it cannot repair is quarantined, originals untouched. |
+| **Timeline and snapshot management** | Date grouping, notes and tags, scheduled snapshots, orphan-blob GC, ZIP export/import with optional AES-256-GCM. |
+| **Boot preflight and diagnostics** | `undo_doctor` checks store health and the hard boot failures; repairable findings are fixed in one step after a snapshot. |
+| **DSH 0.2.2 line support** | The 0.2.2 host needs Node.js 24.9 while offline tools need only 20; client assembly state is written to `dataset.undoClient`; the host-internal package check covers link text and the shared tree. |
+| **Offline emergency kit** | WebUI, GUI window, CLI and desktop shortcut: undo, diff, SAFE MODE and diagnostics while DSH is down. |
+
+> Details (tool arguments, REST contract, snapshot contents, redaction rules) live in the sections below and in the [changelog](CHANGELOG.en.md).
 
 ## Platform support
 
@@ -61,7 +51,7 @@ The caretaker checks proactively and speaks only when something is wrong. The fi
 | Scenario | Action |
 |---|---|
 | Config/plugin mount broken | Chat / WebUI / CLI: `undo` or `restore -Id <id>` |
-| Plugin code broken | Same — snapshots include plugin code trees, one-click restore |
+| Plugin code broken | Same, snapshots include plugin code trees, one-click restore |
 | Last run crashed, unsure what to roll back to | WebUI / GUI banner shows the last-known-good snapshot, one-click rollback |
 | **DSH will not boot at all** | Desktop "dsh-undo-savepoint" → offline WebUI **SAFE MODE** button (or CLI `safe-mode -Label on`) → restart DSH, it always boots |
 | Crash banner says session damage | Chat / CLI: `undo_scan quarantine=true` (or offline `dsh-undo.ps1 scan --fix`) |
@@ -69,17 +59,23 @@ The caretaker checks proactively and speaks only when something is wrong. The fi
 | "My config suddenly changed" | CLI `recent` / chat `undo_recent` check the rollback log |
 | Rollback touched plugins/mounts | Report says "restart DSH for it to take effect" |
 
-| SAFE MODE confirmation: disables every user plugin except this one, so DSH always boots — then re-enable them one by one |
+| SAFE MODE confirmation: disables every user plugin except this one, so DSH always boots, then re-enable them one by one |
 |---|
 | ![safemode](https://cdn.jsdelivr.net/gh/lire1131/dsh-undo-savepoint@master/docs/shots/safe-mode-confirm.en.png) |
 
 ## Installation
 
-Prerequisites: DSH (`@deepseek-ai/dsh`) and Node.js (≥20). The host-mode plugin runs in profiles
+Prerequisites: DSH (`@deepseek-ai/dsh`) and Node.js. DSH 0.2.2 and newer require Node.js ≥24.9 on the host; the plugin's offline CLI / GUI needs only ≥20. The host-mode plugin runs in profiles
 that provide the tools / systemPrompt / webServer services (any Web profile qualifies); when DSH
 cannot boot at all, use the offline CLI / GUI instead, which does not depend on the host.
 
-**Option A (GitHub direct)** — install the latest master commit:
+### Install-time environment check
+
+The install hooks triggered by `dsh plugin add` check the external Node.js, PowerShell, the platform and whether the DSH home is writable. A missing external node or one older than 20, and an unwritable DSH home, are blocking; a missing PowerShell, a non-Windows platform and node below 24.9 are advisory.
+
+When something blocks, an interactive terminal asks whether to continue and defaults to continue after 30 seconds; non-interactive environments print the conclusion and continue. Set `DSH_UNDO_SKIP_ENV_CHECK=1` to skip the check. Installs through `tools/dsh-plugin.ps1` run the same check with `--strict`, so a blocking issue aborts the install.
+
+**Option A (GitHub direct)**. Install the latest master commit:
 
 ```bat
 dsh plugin --profile web add github:lire1131/dsh-undo-savepoint#master
@@ -87,7 +83,7 @@ dsh plugin --profile web add github:lire1131/dsh-undo-savepoint#master
 
 Restart DSH after installing. Snapshot directories and options are configurable in Settings.
 
-**Option C (npm registry)** — install from npm:
+**Option C (npm registry)**. Install from npm:
 
 ```bat
 dsh plugin --profile web add dsh-undo-savepoint
@@ -97,7 +93,7 @@ dsh plugin --profile web add dsh-undo-savepoint
 `dsh.bundle.patch` in its `package.json`, so it is registered into the profile's bundle list
 automatically. Restart DSH to activate.
 
-**Option B (local source / pre-release)** — clone and mount manually:
+**Option B (local source / pre-release)**. Clone and mount manually:
 
 1. **Clone the repository** into a local plugins directory (an ASCII path is safer), e.g. `D:\dsh\plugins\dsh-undo-savepoint`:
 
@@ -127,11 +123,11 @@ mklink /J "<your-dsh-install>\node_modules\dsh-undo-savepoint" "D:\dsh\plugins\d
 
 ## Support range (DSH versions)
 
-At install time and at profile startup the plugin compares the runtime version reported by `dsh --version` against the range this package declares, and refuses to load on a mismatch. `engines.dsh` in `package.json` is a chain of parallel ranges covering the successive `0.1.x` and `0.2.x` declarations, ending with `>=0.2.1-0`.
+At install time and at profile startup the plugin compares the runtime version reported by `dsh --version` against the range this package declares, and refuses to load on a mismatch. `engines.dsh` in `package.json` is a chain of parallel ranges covering the successive `0.1.x` and `0.2.x` declarations, ending with `>=0.2.2-0`.
 
-Verified: the DSH 0.2.0-rc.2 desktop build (full peer tree with cordis 4.0.4) and the 0.2.1-rc.3 desktop build (full peer tree with cordis 4.0.5), both covering the `web` profile together with the command line, the offline WebUI and the offline CLI. All four in-repo gates pass with zero failures, which is what the CLI and web coverage rests on.
+Verified: the DSH 0.2.0-rc.2 desktop build (full peer tree with cordis 4.0.4), 0.2.1-rc.3 and 0.2.1-rc.5, covering the `web` profile together with the command line, the offline WebUI and the offline CLI. DSH 0.2.2-rc.1 was verified in an isolated instance for host activation and client assembly; the desktop build still needs a check on the maintainer's machine.
 
-Verified: installation, GUI tool receipts, safe-mode refusal, and uninstall on an isolated Electron instance (desktop profile).
+DSH 0.2.2 and newer require Node.js 24.9 on the host; the plugin's offline tools still need only 20, and the two are judged separately.
 
 If your DSH version falls outside the declared range, startup reports it as incompatible. Do not edit `package.json`; use the official exact-version exemption instead, which lives in the profile's own `compatibility.json` and touches neither the dependency manifest nor the patch layer:
 
@@ -208,6 +204,10 @@ With a deep or non-ASCII Windows user directory, snapshot paths can exceed Explo
 
 ## Usage (inside DSH)
 
+| Conversation header: iconized Undo / Redo / Snapshot / Message-undo buttons, with the auto-snapshot badge on the right |
+|---|
+| ![header](https://cdn.jsdelivr.net/gh/lire1131/dsh-undo-savepoint@master/docs/shots/webui-header.png) |
+
 - **Undo**: header **Undo** button / `Ctrl+Alt+Z` / tell the AI "undo the last step"
 - **Redo**: **Redo** button / `Ctrl+Alt+Y` (only when nothing changed since the undo)
 - **Manual save**: "Save" in the panel / tell the AI "save a snapshot" / CLI `snapshot`
@@ -215,7 +215,7 @@ With a deep or non-ASCII Windows user directory, snapshot paths can exceed Explo
 - **Message-level undo**: the header "conversation undo" entry opens the message list; "undo this message" rolls back exactly what that message changed
 - **Delete a snapshot**: "Delete" in the panel; or CLI `remove -Id <id>`
 - **Custom shortcuts**: Settings → General → Undo/Redo shortcut (click the box then press a combo; Backspace clears)
-- **Save options**: Settings → General → Snapshot Settings (auto-save toggle, debounce, keep count, snapshot dirs, tracked workspace dirs; the 📁 button opens the native folder picker). "Tracked workspace dirs" accepts comma/semicolon-separated paths — non-empty replaces the default working-dir scope
+- **Save options**: Settings → General → Snapshot Settings (auto-save toggle, debounce, keep count, snapshot dirs, tracked workspace dirs; the 📁 button opens the native folder picker). "Tracked workspace dirs" accepts comma/semicolon-separated paths, non-empty replaces the default working-dir scope
 
 | Message-level undo: pick a message batch, roll back exactly the files it changed |
 |---|
@@ -223,17 +223,21 @@ With a deep or non-ASCII Windows user directory, snapshot paths can exceed Explo
 
 ## Offline tools (work even when DSH won't boot)
 
-**WebUI (recommended)** — run `node tools\undo-server.mjs` (or double-click `tools\launch-undo.bat` / `.command` / `.sh` / `.desktop`); it serves a local `127.0.0.1` page with the timeline / rollback / diff / diagnostics / SAFE MODE. A desktop shortcut is auto-created on plugin load. The diagnostic panel does not only show problems, it repairs them: repairable checks are badged "fixable" and one click on "Repair fixable" fixes them in place, after taking a manual snapshot and with an immediate re-check.
+**WebUI (recommended)**. Run `node tools\undo-server.mjs` (or double-click `tools\launch-undo.bat` / `.command` / `.sh` / `.desktop`); it serves a local `127.0.0.1` page with the timeline / rollback / diff / diagnostics / SAFE MODE. A desktop shortcut is auto-created on plugin load. The diagnostic panel does not only show problems, it repairs them: repairable checks are badged "fixable" and one click on "Repair fixable" fixes them in place, after taking a manual snapshot and with an immediate re-check.
+
+| Desktop GUI window: no browser needed, same timeline and diagnostics |
+|---|
+| ![gui](https://cdn.jsdelivr.net/gh/lire1131/dsh-undo-savepoint@master/docs/shots/gui-main.en.png) |
 
 | Desktop shortcut: auto-created on plugin load, double-click to open the offline WebUI |
 |---|
 | ![shortcut](https://cdn.jsdelivr.net/gh/lire1131/dsh-undo-savepoint@master/docs/shots/shortcut-icon.png) |
 
-| Snapshot diff: file list + change stats (+8 / -2) + line-level highlighting — see every change before rolling back | Offline settings: debounce / retention / redaction mode / dirs / desktop shortcut |
+| Snapshot diff: file list + change stats (+8 / -2) + line-level highlighting, see every change before rolling back | Offline settings: debounce / retention / redaction mode / dirs / desktop shortcut |
 |---|---|
 | ![guidiff](https://cdn.jsdelivr.net/gh/lire1131/dsh-undo-savepoint@master/docs/shots/gui-diff.en.png) | ![guisettings](https://cdn.jsdelivr.net/gh/lire1131/dsh-undo-savepoint@master/docs/shots/gui-settings.en.png) |
 
-> UI language follows your system locale — English UI shown here; Chinese-UI screenshots in [README.md](README.md).
+> UI language follows your system locale, English UI shown here; Chinese-UI screenshots in [README.md](README.md).
 
 <details markdown="1">
 <summary>GUI window, CLI and the 30-line desktop-shortcut script</summary>
@@ -262,7 +266,7 @@ powershell -NoProfile -ExecutionPolicy Bypass -File "tools\dsh-plugin.ps1" add <
 ```
 
 ```powershell
-# 30-line version: open a PowerShell window, paste the whole block, press Enter —
+# 30-line version: open a PowerShell window, paste the whole block, press Enter, then
 # a "DSH Undo Manager" shortcut appears on the desktop without locating any file
 $dshHome = if ($env:DSH_HOME) { $env:DSH_HOME } else { "$env:USERPROFILE\.dsh" }
 $d = @("$dshHome\profiles\web\node_modules\dsh-undo-savepoint", "$dshHome\profiles\node_modules\dsh-undo-savepoint", "$env:USERPROFILE\node_modules\dsh-undo-savepoint") | Where-Object { Test-Path (Join-Path $_ 'tools\dsh-undo-savepoint-gui.bat') } | Select-Object -First 1
@@ -273,7 +277,7 @@ if ($d) {
   $s.WorkingDirectory = Join-Path $d 'tools'
   $s.Save()
   Write-Host "Desktop shortcut created: $($s.FullName)"
-} else { Write-Host 'Plugin directory not found — install it first: dsh plugin --profile web add github:lire1131/dsh-undo-savepoint#master' }
+} else { Write-Host 'Plugin directory not found. Install it first: dsh plugin --profile web add github:lire1131/dsh-undo-savepoint#master' }
 ```
 </details>
 
@@ -291,14 +295,14 @@ When a restore touches `package.json` / `pnpm-lock.yaml`, the default behavior o
 |---|---|---|
 | Manual store | `<snapshot root>\manual\` | Manual snapshots (never auto-pruned) |
 | Auto store | `<snapshot root>\auto\` | Auto snapshots, boot baselines, undo pre-restore snapshots (auto keeps latest 20) |
-| Legacy store | `<snapshot root>\` root | Old flat layout — still read, auto-migrated on startup |
+| Legacy store | `<snapshot root>\` root | Old flat layout, still read, auto-migrated on startup |
 
-> ⚠️ Snapshots contain copies of `.env` etc. which may include secrets — do not share or push them.
+> ⚠️ Snapshots contain copies of `.env` etc. which may include secrets, do not share or push them.
 
 ### Multi-profile & custom home
 
-- **Profile detection**: the plugin reads the active profile from the launch arguments (`dsh --profile mine` / `--profile=mine`; `dsh web` falls back to `web`); config dir defaults to `$DSH_HOME/profiles/<current profile>`, and snapshot stores default to `<snapshot root>/<current profile>/{auto,manual}` (per-profile isolation; the old flat store is still honored so legacy snapshots are never hidden). Offline CLI/GUI cannot see the launch arguments — set `DSH_UNDO_PROFILE` or `profileName` in settings (default `web`).
-- **Custom DSH home**: the home resolution matches the official launcher (`@deepseek-ai/dsh-home-paths`) exactly — `$DSH_HOME` wins (blank = unset; `~` prefixes supported), otherwise `<user home>\.dsh`; settings file, snapshot root, profile dir and plugin-discovery paths are all derived from it, so third-party clients with a custom `DSH_HOME` no longer suffer the "two homes" split.
+- **Profile detection**: the plugin reads the active profile from the launch arguments (`dsh --profile mine` / `--profile=mine`; `dsh web` falls back to `web`); config dir defaults to `$DSH_HOME/profiles/<current profile>`, and snapshot stores default to `<snapshot root>/<current profile>/{auto,manual}` (per-profile isolation; the old flat store is still honored so legacy snapshots are never hidden). Offline CLI/GUI cannot see the launch arguments, set `DSH_UNDO_PROFILE` or `profileName` in settings (default `web`).
+- **Custom DSH home**: the home resolution matches the official launcher (`@deepseek-ai/dsh-home-paths`) exactly, `$DSH_HOME` wins (blank = unset; `~` prefixes supported), otherwise `<user home>\.dsh`; settings file, snapshot root, profile dir and plugin-discovery paths are all derived from it, so third-party clients with a custom `DSH_HOME` no longer suffer the "two homes" split.
 - **Explicit overrides always win**: env vars `DSH_UNDO_SETTINGS` / `DSH_UNDO_ROOT` / `DSH_UNDO_EXPORT` / `DSH_UNDO_PROFILE`, config keys `homeDir` / `profileDir` / `manualDir` / `autoDir` / `profileName`.
 
 ## REST API (backend of the WebUI)
@@ -315,15 +319,15 @@ When a restore touches `package.json` / `pnpm-lock.yaml`, the default behavior o
 | `GET /api/undo/messages` | Message-level undo: per-message change list |
 | `POST /api/undo/undo` | Undo the last change; optional body `{syncDeps: true}` rebuilds `node_modules` from the restored lockfile |
 | `POST /api/undo/redo` | Redo the last undo; optional body `{syncDeps: true}` |
-| `POST /api/undo/restore` | body `{id, syncDeps?}` — restore to a fixed version |
-| `POST /api/undo/message` | body `{id}` — roll back one message's changes |
-| `POST /api/undo/remove` | body `{id}` — delete a snapshot |
-| `POST /api/undo/snapshot` | body `{reason}` — manual save (`note`/`tags` supported) |
+| `POST /api/undo/restore` | body `{id, syncDeps?}`, restore to a fixed version |
+| `POST /api/undo/message` | body `{id}`, roll back one message's changes |
+| `POST /api/undo/remove` | body `{id}`, delete a snapshot |
+| `POST /api/undo/snapshot` | body `{reason}`, manual save (`note`/`tags` supported) |
 | `POST /api/undo/note` | Edit a snapshot's note/tags |
 | `POST /api/undo/prune` | Run expired-snapshot cleanup immediately |
 | `POST /api/undo/compact` | Orphan-blob GC (supports `dry_run`) |
 | `POST /api/undo/export` / `POST /api/undo/import` | Export/import all snapshots as ZIP (pure Node, PowerShell-compatible, optional AES-256-GCM password) |
-| `POST /api/undo/safe-mode` | body `{on}` — enter/exit safe mode |
+| `POST /api/undo/safe-mode` | body `{on}`, enter/exit safe mode |
 | `POST /api/undo/pick-dir` / `pick-file` | Open the native folder/file picker (per-platform), return the chosen path |
 | `GET /api/undo/locale` | Return the current language (`DSH_UNDO_LANG` or auto) |
 

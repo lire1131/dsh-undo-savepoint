@@ -13,10 +13,12 @@
   },
   "scripts": {
     "test": "node tools/check-size.mjs && node tools/check-client-exports.mjs && node tools/check-version.mjs && node tools/check-routes.mjs && node tools/smoke-test.mjs && node tools/host-api-smoke.mjs && node tools/undo-server-smoke.mjs && node tools/home-resolution-test.mjs && node tools/e2e-watch.mjs",
+    "prepare": "node tools/install-preflight.mjs",
+    "postinstall": "node tools/install-preflight.mjs",
     "prepublishOnly": "npm test"
   },
   "engines": {
-    "dsh": ">=0.0.1-0 || >=0.1.0-rc.2 || >=0.1.1-rc.1 || >=0.1.2-alpha.2 || >=0.1.2-rc.1 || >=0.1.5-rc.1 || >=0.1.5-rc.2 || >=0.2.0-rc.2 || >=0.2.1-0",
+    "dsh": ">=0.0.1-0 || >=0.1.0-rc.2 || >=0.1.1-rc.1 || >=0.1.2-alpha.2 || >=0.1.2-rc.1 || >=0.1.5-rc.1 || >=0.1.5-rc.2 || >=0.2.0-rc.2 || >=0.2.1-0 || >=0.2.2-0",
     "node": ">=20.0.0"
   },
   "dsh": {

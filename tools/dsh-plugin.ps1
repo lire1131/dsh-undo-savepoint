@@ -25,6 +25,13 @@ Write-Host "== dsh-plugin: $Action $Package =="
 & $tool snapshot -Label "before plugin $Action $Package"
 if ($LASTEXITCODE -ne 0) { Write-Warning 'Pre-snapshot failed; continuing anyway.' }
 
+# 1.5 environment preflight (W86): same checks as the install hooks, strict mode aborts on blocking.
+& node (Join-Path $PSScriptRoot 'install-preflight.mjs') --strict
+if ($LASTEXITCODE -ne 0) {
+    Write-Warning 'Environment preflight failed; installation aborted (see the lines above).'
+    exit $LASTEXITCODE
+}
+
 # 2. run the real command
 & npx.cmd @deepseek-ai/dsh plugin --profile web $Action $Package
 $code = $LASTEXITCODE

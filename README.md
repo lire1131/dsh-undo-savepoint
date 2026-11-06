@@ -1,4 +1,4 @@
-# dsh-undo-savepoint — DSH 安全管家（撤销 / 回退 / 崩溃自愈）
+# dsh-undo-savepoint DSH 安全管家（撤销 / 回退 / 崩溃自愈）
 
 [![awesome · DSH plugin](https://awesome-dsh-plugin.com/badge.svg)](https://awesome-dsh-plugin.com)
 [![CI](https://github.com/lire1131/dsh-undo-savepoint/actions/workflows/ci.yml/badge.svg)](https://github.com/lire1131/dsh-undo-savepoint/actions/workflows/ci.yml)
@@ -7,51 +7,34 @@
 
 **为 [DeepSeek Harness (DSH)](https://github.com/deepseek-ai/deepseek-harness) 打造的安全管家：改设置自动存档，一键撤销 / 恢复 / 回退到任意版本；主动体检、升级护航、崩溃自愈；DSH 起不来时局外 WebUI / GUI / CLI 依然可用。**
 
-管家的做事方式是主动检查，有异常才说话，正常时安静。启动 30 秒后完成第一次体检；崩溃后给出可回退的最后正常快照；检测到 DSH 版本变化时先打升级保险快照再放行。
+主动检查，有异常才说话。启动 30 秒后完成第一次体检；崩溃后给出最后正常快照；DSH 版本变化时先打升级保险快照。
 
 ## 预览
 
-| 会话头部：撤销 / 恢复 / 快照 / 对话撤回全部图标化 + 自动快照状态徽章（已存 24 份 · 3 小时前） |
+| 局外 WebUI：端口 → Profile → 快照库三段式流程条，共享库按归属分列，逐条对比 / 恢复到此处 / 编辑备注 / 删除 |
 |---|
-| ![header](https://cdn.jsdelivr.net/gh/lire1131/dsh-undo-savepoint@master/docs/shots/webui-header.png) |
+| ![webui](https://cdn.jsdelivr.net/gh/lire1131/dsh-undo-savepoint@master/docs/shots/webui-main.png) |
 
-| WebUI 快照面板：手动保存 / 撤销 / 恢复 / 清理 / 导出导入 / 安全模式，逐条「差异 / 回退到此版本 / 删除」 | DSH 设置「快照」独立栏目（自动保存 / 保留数量 / 敏感模式 / 插件白名单 / 定时快照） |
+| 快照对比：左栏文件导航带增删行数，右栏逐行红绿，敏感值自动脱敏 | 设置：实例管理、快照策略、自动清理与保留数量 |
 |---|---|
-| ![panel](https://cdn.jsdelivr.net/gh/lire1131/dsh-undo-savepoint@95230c2/docs/shots/webui-panel.png) | ![settings](https://cdn.jsdelivr.net/gh/lire1131/dsh-undo-savepoint@master/docs/shots/webui-settings-section.png) |
-
-| 局外 WebUI：崩溃横幅 + 撤销 / 重做 / 安全模式 / 诊断 / 对话撤回 / 设置，不依赖 DSH 运行（快照对比与设置见[局外工具](#局外工具dsh-挂了也能用)一节） |
-|---|
-| ![gui](https://cdn.jsdelivr.net/gh/lire1131/dsh-undo-savepoint@95230c2/docs/shots/gui-main.png) |
-
-## 安全管家
-
-| 管家职责 | 对应能力 |
-|---|---|
-| 启动健康体检 | 启动 30 秒后自动检查会话目录、容错补丁、快照覆盖与磁盘占用，有异常才告警 |
-| 崩溃自愈 | DSH 完全起不来时一键安全模式，只保留本插件保证能启动；崩溃归因给出最后正常快照，一键回退 |
-| 会话医生 | undo_scan 扫描会话文件，修复单帧布局违规与 seq 重叠两类损伤，修不了的隔离，绝不动原件 |
-| 升级护航 | 检测到 DSH 版本变化自动打升级保险快照，升级后首次启动出兼容体检与会话普查报告 |
-| 快照不泄密 | .env、凭据、home 级设置进快照自动脱敏，真实值只存本机 vault，导出包零泄露 |
-| 容错补丁 | 对 DSH 历史版本的已知缺陷点做运行时兜底，官方修复后补丁自然失效，不影响功能 |
+| ![diff](https://cdn.jsdelivr.net/gh/lire1131/dsh-undo-savepoint@master/docs/shots/webui-diff.png) | ![settings](https://cdn.jsdelivr.net/gh/lire1131/dsh-undo-savepoint@master/docs/shots/webui-settings.png) |
 
 ## 核心能力
 
 | 能力 | 说明 |
 |---|---|
-| **配置 + 插件代码一键回滚** | 快照覆盖配置与用户插件代码树，改坏任何一处都能撤销（含 yield\* 类纯代码事故）；支持 undo / redo / 回退任意版本，WebUI / 对话 / 离线 CLI 三入口 |
-| **消息级撤销** | 按 AI 消息（或 60s 批次）记录工作区文件变更，一句话回滚「这条消息改了什么」（恢复原内容 / 删除新建文件）；不依赖 git、不碰会话存储；「跟踪工作区目录」可在设置中配置（逗号 / 分号多选，非空时覆盖默认工作目录） |
-| **局内对话撤回** | 对话头部「对话撤回」入口 + 消息级撤回面板，在 DSH 面板里即可撤回指定消息批次的文件改动 |
-| **密钥脱敏 + 本机 vault** | `.env` / 凭据进快照自动脱敏（结构保留），导出 ZIP 零泄露；真实值存本机 vault，本机回滚完整还原 |
-| **一键安全模式** | DSH 完全起不来时，禁用除撤销系统外所有插件保证能启动；自动快照 + 备份配置（profile / home 双级 patch 一并备份恢复，并中和 `dsh.profile.bundles` 里会导致启动器硬校验失败的条目），一键退出；家目录被重建 / 换机时残留状态自动降级不激活 |
-| **崩溃归因** | 上次异常退出时直接给出「最后正常快照」id + 一键回退按钮；按日志签名分类崩溃原因（`session-corrupt` / `bundle-check` / `patch-tree`），横幅给出对应处置建议 |
-| **会话文件扫描修复** | `undo_scan` 扫描 `<home>/sessions/**/session.jsonl.zstd`：单帧布局违规（8/18 崩溃根因）与 synthetic-closer seq 重叠（撤销/快照还原后的中断恢复 seq 重叠）可一键修复（原件留 `.bak` + 隔离区副本）；无法解码的只隔离不动；DSH 起不来时用 `dsh-undo.ps1 scan [--fix]` 离线处理（需 Node ≥22.15，Node 20 下降级为提示） |
-| **快照时间线（Time Machine）** | 快照按日期分组卡片化（备注 / 标签芯片，尊重 `prefers-reduced-motion`）+ 文件级 diff（新增 / 删除行高亮、目录树导航、逐文件浏览）+ 一键回滚 |
-| **快照管理** | 备注 / 标签（`undo_note`，时间线可直接编辑）、定时快照（间隔制，自动建档 + 保留清理）、孤儿 blob GC（`undo_compact`，释放磁盘）、ZIP 导出 / 导入（可选 AES-256-GCM 加密，兼容 PowerShell 明文互操作） |
-| **一键诊断与启动预检 `undo_doctor`** | 存储侧：快照目录可写性、blob 完整性（缺失 / 孤儿）、设置文件健康、快照规模分布。启动侧预检那些会让 DSH 在挂载任何插件之前就崩掉的硬失败：profile 清单 BOM / JSON / 结构、`dsh.profile.bundles` 逐项可解析、`patchReload` 取值、`link:` junction 落点、patch 里重复的 loader id、上次启动未完成。输出 ok / warn / err 结构化报告，可修项标 `[fixable]`，对话里 `undo_doctor fix=true`、离线 `dsh-undo.ps1 doctor -Fix`、局外 WebUI 诊断面板的「修复可修项」按钮都能一键修复（改前先落手动快照，修完自动复查） |
-| **跨机迁移安全** | 恢复前自动预检缺失插件并明确提示；快照可一键导出 / 导入 ZIP 迁移（见 [docs/migration.md](docs/migration.md)） |
-| **局外急救** | DSH 挂了也能用：WebUI + GUI 窗口 + CLI + 桌面快捷方式，时间线 / 回滚 / 对比 / 安全模式 / 诊断一应俱全 |
+| **配置与插件代码回滚** | 快照覆盖配置与用户插件代码树，undo / redo / 回退任意版本，WebUI、对话、离线 CLI 三入口。 |
+| **消息级撤销** | 按 AI 消息或 60s 批次回滚工作区文件改动，不依赖 git，不碰会话存储。 |
+| **密钥脱敏** | `.env` 与凭据进快照自动脱敏，真实值只存本机 vault，导出 ZIP 零泄露。 |
+| **一键安全模式** | DSH 完全起不来时只保留本插件保证启动，自动快照并备份 profile 与 home 补丁。 |
+| **崩溃归因** | 按日志签名分类崩溃原因，给出最后正常快照与一键回退。 |
+| **会话扫描修复** | `undo_scan` 修复会话单帧布局违规与 seq 重叠，修不了的隔离，原件不动。 |
+| **时间线与快照管理** | 日期分组、备注标签、定时快照、孤儿 blob GC、ZIP 导出导入（可选 AES-256-GCM 加密）。 |
+| **启动预检与诊断** | `undo_doctor` 检查存储健康与启动硬失败，可修项一键修复，修前自动落快照。 |
+| **DSH 0.2.2 线适配** | 宿主 0.2.2 要求 Node.js 24.9，离线工具仍只要求 20；客户端装配状态写入 `dataset.undoClient`；宿主内部包检查覆盖链接文本与共享树。 |
+| **局外急救** | WebUI、GUI 窗口、CLI 与桌面快捷方式，DSH 挂了也能回滚、对比、进安全模式。 |
 
-> 基础能力（键盘快捷键、对话指令、自动清理、双模式保存、可配置参数等）见下文与[更新日志](CHANGELOG.md)。
+> 细节条目（工具参数、REST 契约、快照内容、脱敏规则）见下文与[更新日志](CHANGELOG.md)。
 
 ## 平台支持
 
@@ -90,9 +73,15 @@ v0.4.0 起核心抽取为纯 Node 零依赖模块（`lib/core.mjs` / `lib/zip.mj
 
 ## 安装
 
-前置：已安装 DSH（`@deepseek-ai/dsh`）与 Node.js（≥20）。宿主模式运行于提供
+前置：已安装 DSH（`@deepseek-ai/dsh`）与 Node.js。DSH 0.2.2 及以后版本的宿主要求 Node.js ≥24.9；本插件的离线 CLI / GUI 只要求 ≥20。宿主模式运行于提供
 tools / systemPrompt / webServer 服务的 profile（Web 型 profile 均满足）；
 DSH 完全无法启动时改用局外 CLI / GUI，不依赖宿主。
+
+### 安装期环境自检
+
+`dsh plugin add` 触发的安装钩子会检查外部 Node.js、PowerShell、平台与 DSH home 可写性。外部 node 缺失或低于 20、DSH home 不可写为阻断项；PowerShell 缺失、非 Windows 平台、node 低于 24.9 为提示项。
+
+有阻断项时，交互终端会询问是否继续，30 秒无输入按默认继续；非交互环境打印结论后按默认继续。设置 `DSH_UNDO_SKIP_ENV_CHECK=1` 可跳过整个自检。用 `tools/dsh-plugin.ps1` 安装时同一检查以 `--strict` 运行，有阻断项直接中止。
 
 ### 方式 A：GitHub 直装（推荐）
 
@@ -143,11 +132,11 @@ mklink /J "<你的DSH安装>\node_modules\dsh-undo-savepoint" "D:\dsh\plugins\ds
 
 ## 支持范围（DSH 版本）
 
-插件安装与 profile 启动时会按本包声明的 DSH 范围核对运行时（`dsh --version` 显示的那个）版本，不匹配即拒绝加载。`package.json` 的 `engines.dsh` 是一串并列范围，覆盖 `0.1.x` 与 `0.2.x` 的历次声明，末段为 `>=0.2.1-0`。
+插件安装与 profile 启动时会按本包声明的 DSH 范围核对运行时（`dsh --version` 显示的那个）版本，不匹配即拒绝加载。`package.json` 的 `engines.dsh` 是一串并列范围，覆盖 `0.1.x` 与 `0.2.x` 的历次声明，末段为 `>=0.2.2-0`。
 
-已验证：桌面版 DSH 0.2.0-rc.2（cordis 4.0.4 全 peer 树）与 0.2.1-rc.3（cordis 4.0.5 全 peer 树），两版都覆盖 `web` profile 与命令行、局外 WebUI、局外 CLI。工程内四道门禁零失败，覆盖 CLI 与 Web 端。
+已验证：桌面版 DSH 0.2.0-rc.2（cordis 4.0.4 全 peer 树）、0.2.1-rc.3 与 0.2.1-rc.5，覆盖 `web` profile 与命令行、局外 WebUI、局外 CLI；0.2.2-rc.1 在隔离实例里验证过宿主激活与客户端装配，桌面形态待维护者机器复核。
 
-已验证：隔离 Electron 实例（desktop profile）的安装、GUI 工具回执、安全模式拒动与卸载。
+DSH 0.2.2 起宿主要求 Node.js 24.9，本插件的离线工具仍只要求 20，两者分开判定。
 
 若你的 DSH 版本不在声明范围内，启动会被判不兼容。此时不要改 `package.json`，改用官方的精确版本豁免，豁免写在 profile 自己的 `compatibility.json` 里，不动依赖清单与 patch 层：
 
@@ -224,6 +213,10 @@ Windows 用户目录较深或使用中文用户名时，快照文件的路径可
 
 ## 使用（DSH 内）
 
+| 会话头部：撤销 / 恢复 / 快照 / 对话撤回全部图标化，右侧是自动快照状态徽章 |
+|---|
+| ![header](https://cdn.jsdelivr.net/gh/lire1131/dsh-undo-savepoint@master/docs/shots/webui-header.png) |
+
 - **撤销**：头部「撤销」按钮 / `Ctrl+Alt+Z` / 对 AI 说「撤销上一步」。
 - **恢复**：「恢复」按钮 / `Ctrl+Alt+Y`（仅当撤销后没有新操作）。
 - **手动保存**：面板里「手动保存」/ 对 AI 说「保存快照」/ CLI `snapshot`。
@@ -250,6 +243,10 @@ node tools/undo-server.mjs     # 或双击 launch-undo.bat / .command / .sh / .d
 ```
 
 拉起纯本地 `127.0.0.1` 服务器 + 内置网页：时间线 / 回滚 / 对比 / 安全模式 / 诊断，双击即用，不依赖 DSH。插件加载后还会自动在桌面创建「dsh-undo-savepoint」快捷方式，双击直接打开。诊断面板不只看得见问题，也能修：可修项会标「可修复」，点「修复可修项」即就地修好（修前自动落一个手动快照，修完立刻复查）。
+
+| 桌面 GUI 窗口：不依赖浏览器，时间线与诊断同源 |
+|---|
+| ![gui](https://cdn.jsdelivr.net/gh/lire1131/dsh-undo-savepoint@master/docs/shots/gui-main.png) |
 
 | 桌面快捷方式：插件加载后自动创建，双击直接打开局外 WebUI |
 |---|
@@ -340,7 +337,7 @@ powershell -NoProfile -ExecutionPolicy Bypass -File "tools\dsh-plugin.ps1" add <
 | 自动库 | `<快照根>\auto\` | 自动快照、启动基线、撤销后悔档（自动档保留最近 20 份） |
 | 旧库（兼容） | `<快照根>\` 根 | 旧版扁平布局，读取兼容，启动时自动迁移到新库 |
 
-> ⚠️ 快照含 `.env` 等配置副本，可能含密钥——不要外传。
+> ⚠️ 快照含 `.env` 等配置副本，可能含密钥，不要外传。
 
 > 体积纪律：单个快照引用体积 ≤5MB（manifest 记录 `totalBytes`，`undo_list` 展示）；插件代码树超限时**只记清单 + 标记 `[truncated]` 告警，不丢任何数据**，可手动快照 / 导出兜底。无外部插件时快照仅配置文件（KB 级）；插件整体体积门禁 5MB（当前产物约 0.6MB）。
 
@@ -354,7 +351,7 @@ powershell -NoProfile -ExecutionPolicy Bypass -File "tools\dsh-plugin.ps1" add <
 
 离线 CLI / GUI 看不到启动参数，通过环境变量 `DSH_UNDO_PROFILE` 或 settings 里的 `profileName` 指定（默认 `web`）。
 
-**自定义家目录**（v0.3.5 起，issue #6）：与官方启动器（`@deepseek-ai/dsh-home-paths`）解析完全一致——**`DSH_HOME` 环境变量优先**（空白视为未设置，支持 `~` / `~/` / `~\` 前缀），否则回退 `<用户家目录>\.dsh`。设置文件（`$DSH_HOME\undo\settings.json`）、默认快照根（`$DSH_HOME\undo-snapshots`）、profile 目录、home 根、插件发现路径全部基于它——第三方客户端不再出现「两套家分裂」，重启后自定义目录稳定保留。
+**自定义家目录**（v0.3.5 起，issue #6）：与官方启动器（`@deepseek-ai/dsh-home-paths`）解析完全一致，**`DSH_HOME` 环境变量优先**（空白视为未设置，支持 `~` / `~/` / `~\` 前缀），否则回退 `<用户家目录>\.dsh`。设置文件（`$DSH_HOME\undo\settings.json`）、默认快照根（`$DSH_HOME\undo-snapshots`）、profile 目录、home 根、插件发现路径全部基于它，第三方客户端不再出现「两套家分裂」，重启后自定义目录稳定保留。
 
 **显式覆盖始终优先**：环境变量 `DSH_UNDO_SETTINGS` / `DSH_UNDO_ROOT` / `DSH_UNDO_EXPORT`，以及 config 里的 `homeDir` / `profileDir` / `manualDir` / `autoDir` / `profileName`。
 
