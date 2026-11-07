@@ -3991,7 +3991,7 @@ console.log('== W89. #49 host-tree links exempt when realpath fails ==');
     "const hits = report.checks.filter((c) => c.code === 'pre-host-internal').map((c) => ({ name: c.name, level: c.level, detail: c.detail }));",
     'const fixed = await health.runDoctorFix(cfg);',
     "const applied = fixed.applied.filter((a) => a.code === 'pre-host-internal').map((a) => ({ target: a.target, ok: a.ok }));",
-    'const exists = async (p) => { try { await fs.access(p); return true; } catch { return false; } };',
+    'const exists = async (p) => { try { await fs.lstat(p); return true; } catch { return false; } };',
     "console.log(JSON.stringify({ kinds, hits, applied, underExists: await exists(join(scope, 'dangling-under')), structuralExists: await exists(join(scope, 'structural-only')), outExists: await exists(join(scope, 'dangling-out')) }));",
     'process.exit(0);',
     '',
@@ -4014,18 +4014,19 @@ console.log('== W89. #49 host-tree links exempt when realpath fails ==');
   if (!r89.json) console.error(`W89: child probe produced no JSON (code ${r89.code}): ${r89.stderr.slice(0, 800)}`);
   const k89 = (n) => j89.kinds?.[n] ?? {};
   const hit89 = (n) => (j89.hits ?? []).filter((h) => String(h.name ?? '').includes(n));
+  const fixOk89 = !(j89.applied ?? []).some((a) => String(a.target ?? '').includes('dangling-under') || String(a.target ?? '').includes('structural-only'));
   if (!r89.json || k89('dangling-under').kind !== 'host-link' || k89('dangling-under').linkState !== 'unresolved'
-      || k89('dangling-out').kind !== 'shadow' || (j89.hits ?? []).length !== 1) {
-    console.error('W89 debug:', JSON.stringify(j89).slice(0, 2500));
+      || k89('dangling-out').kind !== 'shadow' || (j89.hits ?? []).length !== 1
+      || j89.underExists !== true || j89.structuralExists !== true || !fixOk89) {
+    console.error('W89 debug:', JSON.stringify({
+      kinds: j89.kinds,
+      hits: j89.hits,
+      applied: j89.applied,
+      underExists: j89.underExists,
+      structuralExists: j89.structuralExists,
+      outExists: j89.outExists,
+    }).slice(0, 3000));
   }
-  console.log('   W89 probe:', JSON.stringify({
-    kinds: Object.fromEntries(Object.entries(j89.kinds ?? {}).map(([k, v]) => [k, [v.kind, v.linkState ?? null]])),
-    hits: (j89.hits ?? []).length,
-    applied: (j89.applied ?? []).map((a) => `${String(a.target ?? '').replace(/^.*[\\/]/, '')}|${a.ok}`),
-    underExists: j89.underExists,
-    structuralExists: j89.structuralExists,
-    outExists: j89.outExists,
-  }));
   check(k89('dangling-under').kind === 'host-link' && k89('dangling-under').linkState === 'unresolved'
       && hit89('dangling-under').length === 0,
     'W89: 目标不可解析但链接文本落在宿主树内的 junction 判 host-link 且不报错');
