@@ -4018,6 +4018,14 @@ console.log('== W89. #49 host-tree links exempt when realpath fails ==');
       || k89('dangling-out').kind !== 'shadow' || (j89.hits ?? []).length !== 1) {
     console.error('W89 debug:', JSON.stringify(j89).slice(0, 2500));
   }
+  console.log('   W89 probe:', JSON.stringify({
+    kinds: Object.fromEntries(Object.entries(j89.kinds ?? {}).map(([k, v]) => [k, [v.kind, v.linkState ?? null]])),
+    hits: (j89.hits ?? []).length,
+    applied: (j89.applied ?? []).map((a) => `${String(a.target ?? '').replace(/^.*[\\/]/, '')}|${a.ok}`),
+    underExists: j89.underExists,
+    structuralExists: j89.structuralExists,
+    outExists: j89.outExists,
+  }));
   check(k89('dangling-under').kind === 'host-link' && k89('dangling-under').linkState === 'unresolved'
       && hit89('dangling-under').length === 0,
     'W89: 目标不可解析但链接文本落在宿主树内的 junction 判 host-link 且不报错');
