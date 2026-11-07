@@ -5,19 +5,19 @@
 
 > 中文 | [English](README.en.md) | [更新日志](CHANGELOG.md)
 
-**为 [DeepSeek Harness (DSH)](https://github.com/deepseek-ai/deepseek-harness) 打造的安全管家：改设置自动存档，一键撤销 / 恢复 / 回退到任意版本；主动体检、升级护航、崩溃自愈；DSH 起不来时局外 WebUI / GUI / CLI 依然可用。**
+**为 [DeepSeek Harness (DSH)](https://github.com/deepseek-ai/deepseek-harness) 打造的安全管家。改设置自动存档，一键撤销 / 恢复 / 回退到任意版本；DSH 起不来时，局外 WebUI / GUI / CLI 依然可用。**
 
-主动检查，有异常才说话。启动 30 秒后完成第一次体检；崩溃后给出最后正常快照；DSH 版本变化时先打升级保险快照。
+主动检查，有异常才说话。DSH 版本变化时先打升级保险快照，崩溃后给出最后正常快照。
 
 ## 预览
 
-| 局外 WebUI：端口 → Profile → 快照库三段式流程条，共享库按归属分列，逐条对比 / 恢复到此处 / 编辑备注 / 删除 |
+| 局外 WebUI：端口 → Profile → 快照库，逐条对比 / 恢复 / 备注 / 删除 |
 |---|
-| ![webui](https://cdn.jsdelivr.net/gh/lire1131/dsh-undo-savepoint@master/docs/shots/webui-main.png) |
+| ![webui](https://cdn.jsdelivr.net/gh/lire1131/dsh-undo-savepoint@v0.5.1/docs/shots/webui-main.png) |
 
-| 快照对比：左栏文件导航带增删行数，右栏逐行红绿，敏感值自动脱敏 | 设置：实例管理、快照策略、自动清理与保留数量 |
+| 快照对比：左栏文件导航带增删行数，右栏逐行红绿 | 设置：实例管理、快照策略、自动清理与保留数量 |
 |---|---|
-| ![diff](https://cdn.jsdelivr.net/gh/lire1131/dsh-undo-savepoint@master/docs/shots/webui-diff.png) | ![settings](https://cdn.jsdelivr.net/gh/lire1131/dsh-undo-savepoint@master/docs/shots/webui-settings.png) |
+| ![diff](https://cdn.jsdelivr.net/gh/lire1131/dsh-undo-savepoint@v0.5.1/docs/shots/webui-diff.png) | ![settings](https://cdn.jsdelivr.net/gh/lire1131/dsh-undo-savepoint@v0.5.1/docs/shots/webui-settings.png) |
 
 ## 核心能力
 
@@ -25,20 +25,14 @@
 |---|---|
 | **配置与插件代码回滚** | 快照覆盖配置与用户插件代码树，undo / redo / 回退任意版本，WebUI、对话、离线 CLI 三入口。 |
 | **消息级撤销** | 按 AI 消息或 60s 批次回滚工作区文件改动，不依赖 git，不碰会话存储。 |
-| **密钥脱敏** | `.env` 与凭据进快照自动脱敏，真实值只存本机 vault，导出 ZIP 零泄露。 |
 | **一键安全模式** | DSH 完全起不来时只保留本插件保证启动，自动快照并备份 profile 与 home 补丁。 |
 | **崩溃归因** | 按日志签名分类崩溃原因，给出最后正常快照与一键回退。 |
 | **会话扫描修复** | `undo_scan` 修复会话单帧布局违规与 seq 重叠，修不了的隔离，原件不动。 |
-| **时间线与快照管理** | 日期分组、备注标签、定时快照、孤儿 blob GC、ZIP 导出导入（可选 AES-256-GCM 加密）。 |
-| **启动预检与诊断** | `undo_doctor` 检查存储健康与启动硬失败，可修项一键修复，修前自动落快照。 |
-| **DSH 0.2.2 线适配** | 宿主 0.2.2 要求 Node.js 24.9，离线工具仍只要求 20；客户端装配状态写入 `dataset.undoClient`；宿主内部包检查覆盖链接文本与共享树。 |
+| **时间线与快照管理** | 日期分组、备注标签、定时快照、ZIP 导出导入。 |
+| **启动预检与诊断** | `undo_doctor` 检查启动硬失败与补丁、清单结构，可修项一键修复，修前自动落快照。 |
 | **局外急救** | WebUI、GUI 窗口、CLI 与桌面快捷方式，DSH 挂了也能回滚、对比、进安全模式。 |
 
-> 细节条目（工具参数、REST 契约、快照内容、脱敏规则）见下文与[更新日志](CHANGELOG.md)。
-
 ## 平台支持
-
-v0.4.0 起核心抽取为纯 Node 零依赖模块（`lib/core.mjs` / `lib/zip.mjs`），外围按平台分发，Windows / macOS / Linux 三平台可用：
 
 | 能力 | Windows | macOS | Linux |
 |---|---|---|---|
@@ -46,358 +40,88 @@ v0.4.0 起核心抽取为纯 Node 零依赖模块（`lib/core.mjs` / `lib/zip.mj
 | 局外 CLI / GUI | ✅（.bat / .ps1） | ✅（.command） | ✅（.sh） |
 | 局外 WebUI（undo-server） | ✅ | ✅ | ✅ |
 | 文件选择对话框 | PowerShell 原生 | osascript | zenity → kdialog（都没有则回退手输） |
-| CI 回归 | windows-latest | macos-latest | ubuntu-latest |
-
-> CI 为三平台矩阵（`windows/ubuntu/macos × node[20,22]`）。ZIP 导出 / 导入由纯 Node 零依赖 `lib/zip.mjs` 实现（deflate / 存储、CRC32、UTF-8），不引入运行时依赖，与 PowerShell 互操作已双向验证。
-
-> ![icon](https://cdn.jsdelivr.net/gh/lire1131/dsh-undo-savepoint@master/docs/app-icon.png)
->
-> Logo / 图标：生成提示词见 `docs/logo-prompt.md`；WebUI favicon 用内置 `tools/webui/logo.svg`。自定义图标：透明 PNG 存为 `tools/webui/logo.png`，运行 `node tools/make-ico.mjs tools/webui/logo.png tools/webui/logo.ico` 生成 `.ico`，下次创建快捷方式时自动启用（回退顺序 `logo.ico` → `logo.png` → 系统默认）。
-
-## 崩溃急救速查（按场景选工具）
-
-| 场景 | 操作 |
-|---|---|
-| 配置 / 插件被改坏 | 对话 / WebUI / CLI：`undo` 或 `restore -Id <id>` |
-| 插件代码被改坏 | 同上（快照含插件代码树，一键还原） |
-| 上次异常退出，不知回退到哪 | WebUI / GUI 横幅显示 last-good 快照，一键回退 |
-| **DSH 完全起不来** | 桌面「DSH撤销管理器」→ **安全模式**按钮（或 CLI `safe-mode -Label on`）→ 重启 DSH 保证能启动 |
-| 崩溃横幅提示会话损坏 | 对话 / CLI：`undo_scan quarantine=true` 修复（或离线 `dsh-undo.ps1 scan --fix`） |
-| 恢复后可能缺插件（跨机） | 恢复报告预检提示；先装插件或进安全模式 |
-| 配置「突然变了」 | CLI `recent` / 对话 `undo_recent` 查回滚日志 |
-| 撤销涉及插件 / 挂载 | 报告提示「重启 DSH 后生效」 |
-
-| 安全模式确认：一键禁用除本插件外的全部用户插件，保证 DSH 能启动，之后再逐个排查 |
-|---|
-| ![safemode](https://cdn.jsdelivr.net/gh/lire1131/dsh-undo-savepoint@master/docs/shots/safe-mode-confirm.png) |
 
 ## 安装
 
-前置：已安装 DSH（`@deepseek-ai/dsh`）与 Node.js。DSH 0.2.2 及以后版本的宿主要求 Node.js ≥24.9；本插件的离线 CLI / GUI 只要求 ≥20。宿主模式运行于提供
-tools / systemPrompt / webServer 服务的 profile（Web 型 profile 均满足）；
-DSH 完全无法启动时改用局外 CLI / GUI，不依赖宿主。
-
-### 安装期环境自检
-
-`dsh plugin add` 触发的安装钩子会检查外部 Node.js、PowerShell、平台与 DSH home 可写性。外部 node 缺失或低于 20、DSH home 不可写为阻断项；PowerShell 缺失、非 Windows 平台、node 低于 24.9 为提示项。
-
-有阻断项时，交互终端会询问是否继续，30 秒无输入按默认继续；非交互环境打印结论后按默认继续。设置 `DSH_UNDO_SKIP_ENV_CHECK=1` 可跳过整个自检。用 `tools/dsh-plugin.ps1` 安装时同一检查以 `--strict` 运行，有阻断项直接中止。
+前置：已安装 DSH（`@deepseek-ai/dsh`）与 Node.js。DSH 0.2.2 及以后版本的宿主要求 Node.js ≥24.9；本插件的离线 CLI / GUI 只要求 ≥20。
 
 ### 方式 A：GitHub 直装（推荐）
 
-安装 master 最新提交：
+```bat
+dsh plugin --profile web add github:lire1131/dsh-undo-savepoint#v0.5.1
+```
+
+### 方式 B：npm 源安装
 
 ```bat
-dsh plugin --profile web add github:lire1131/dsh-undo-savepoint#master
+dsh plugin --profile web add dsh-undo-savepoint@0.5.1
 ```
 
-安装完成后重启 DSH 即生效（快照目录、参数等均可在设置中修改）。
+不带版本号时安装 npm 上的 latest。安装完成后重启 DSH 即生效。
 
-### 方式 C：npm 源安装
+### 安装期环境自检
 
-```bat
-dsh plugin --profile web add dsh-undo-savepoint
-```
-
-`dsh plugin add` 转发 pnpm 在 profile 目录完成安装，本包的 `package.json` 声明了
-`dsh.bundle.patch`，安装后自动登记进 profile 的 bundle 清单，重启 DSH 即生效。
-
-### 方式 B：本地源码 / 免发布
-
-1. **把仓库放到本地插件目录**（无中文路径更稳妥），例如 `D:\dsh\plugins\dsh-undo-savepoint`：
-
-```bat
-git clone https://github.com/lire1131/dsh-undo-savepoint.git D:\dsh\plugins\dsh-undo-savepoint
-```
-
-2. **建立 junction**（Windows），让 DSH 的模块解析器通过包名 `dsh-undo-savepoint` 找到本地源码（host 插件与 WebUI client 插件都靠它）：
-
-```bat
-mklink /J "<你的DSH安装>\node_modules\dsh-undo-savepoint" "D:\dsh\plugins\dsh-undo-savepoint"
-```
-
-> DSH 从它自己的 `node_modules` 向上解析包名。默认安装位置是 `C:\Users\<用户名>\node_modules`（npm 安装在用户目录时）；若用 npx 缓存运行，则对 npx 缓存目录下的 `node_modules` 建 junction。执行 `npm root -g` 或检查 DSH 启动报错路径即可确认。
-
-3. **挂载到 profile 补丁层**：编辑 `<DSH_HOME>\profiles\web\cordis.patch.yml`，追加：
-
-```yaml
-- insert:
-    - id: dsh-undo-savepoint
-      name: dsh-undo-savepoint
-```
-
-4. **生效**：保存即热加载（host 部分）；刷新页面出现头部按钮与设置项；重启 DSH 后一切进入稳态（旧版扁平快照会自动迁移）。
-
-> 依赖说明：host 插件通过 `createRequire('<DSH安装根>/package.json')` 加载 `@deepseek-ai/dsh-tools`。若 DSH 安装在其他位置，设置环境变量 `DSH_ROOT=<DSH安装根>` 即可，无需额外安装依赖。
-
-## 支持范围（DSH 版本）
-
-插件安装与 profile 启动时会按本包声明的 DSH 范围核对运行时（`dsh --version` 显示的那个）版本，不匹配即拒绝加载。`package.json` 的 `engines.dsh` 是一串并列范围，覆盖 `0.1.x` 与 `0.2.x` 的历次声明，末段为 `>=0.2.2-0`。
-
-已验证：桌面版 DSH 0.2.0-rc.2（cordis 4.0.4 全 peer 树）、0.2.1-rc.3 与 0.2.1-rc.5，覆盖 `web` profile 与命令行、局外 WebUI、局外 CLI；0.2.2-rc.1 在隔离实例里验证过宿主激活与客户端装配，桌面形态待维护者机器复核。
-
-DSH 0.2.2 起宿主要求 Node.js 24.9，本插件的离线工具仍只要求 20，两者分开判定。
-
-若你的 DSH 版本不在声明范围内，启动会被判不兼容。此时不要改 `package.json`，改用官方的精确版本豁免，豁免写在 profile 自己的 `compatibility.json` 里，不动依赖清单与 patch 层：
-
-```bat
-dsh plugin --profile web version-exemptions
-dsh plugin --profile web allow-version dsh-undo-savepoint@0.5.1 --dsh-version <运行时版本> --accept-risk
-dsh plugin --profile web revoke-version dsh-undo-savepoint@0.5.1 --dsh-version <运行时版本>
-```
-
-第一条列出现有授权，第二条提交豁免，第三条撤销。豁免只授权加载，不授权依赖脚本；插件升级与 DSH 升级都不继承授权，每次都要重新确认。范围声明没有写死到最新版，是因为 DSH 各版仍可能有破坏性变动，新版本要实测过再扩范围。
+安装钩子会检查外部 Node.js、PowerShell、平台与 DSH home 可写性。设置 `DSH_UNDO_SKIP_ENV_CHECK=1` 可跳过整个自检。
 
 ### 桌面端
 
-桌面版 DSH 从它自己的安装目录启动，走的是 desktop profile，命令把 `web` 换成 `desktop` 即可，`add` / `remove` / 版本豁免三命令用法一致。
+桌面版走 `desktop profile`，命令把 `web` 换成 `desktop`。先启动一次桌面端完成初始化，再**完全退出**桌面客户端后执行安装。
 
 ```bat
-dsh plugin --profile desktop add github:lire1131/dsh-undo-savepoint#master
+dsh plugin --profile desktop add github:lire1131/dsh-undo-savepoint#v0.5.1
 ```
 
-前置：先启动一次桌面端完成初始化，再**完全退出**桌面客户端，然后敲上面的命令。桌面端在跑时 profile 目录被占用，写入会失败或半写。
+DSH 0.2.0-rc.2 起的桌面版遇到致命错误会弹官方恢复窗，第三个按钮会摘掉第三方插件的 bundles 条目，并把补丁备份为 `cordis.patch.yml.bak-<时间戳>`，包本体保留。被禁用后不需要重装，恢复挂载声明即可。桌面形态下 safe-mode 默认拒绝执行，带 `confirmDesktop` 的显式确认会先落前置快照再写文件；官方恢复窗第三个按钮仍是首选逃生路径。
 
-**官方恢复弹窗与插件。** 0.2.0 桌面版遇到致命错误时会弹原生三按钮窗：退出、重启、禁用第三方插件并重启。第三个按钮会摘掉第三方插件在 bundles 挂载清单里的条目、把 profile patch 备份为 `cordis.patch.yml.bak-<时间戳>`，包本体保留。两点要记住：
-
-1. 被该按钮禁用后**不需要重装**。包还在 profile 目录里，dependencies 也没动，把挂载声明恢复回去就复活。
-2. **profile patch 被挪走时，容错补丁（tolerate / isolate / selfheal）随之失效。** 手动恢复 bundles 而漏掉 patch 的话，旧版会话可能踩已知坑。两条恢复路径任选：手动把 `cordis.patch.yml.bak-<时间戳>` 还原为 `cordis.patch.yml` 后重启，或重跑一次插件安装后处理，由它重建 bundles 与 patch。
-
-**safe-mode 限制。** 桌面形态下 safe-mode 会被拒绝执行，逃生舱是官方恢复弹窗的第三个按钮。
-
-## 卸载
-
-### 标准卸载
-
-两条命令，第二条负责清理残留：
-
-```bat
-dsh plugin remove dsh-undo-savepoint
-node tools\uninstall.mjs
-```
-
-`uninstall.mjs` 默认**温和清理**：摘掉挂载声明、删掉 junction 与桌面快捷方式，**保留快照库与设置**（重装即可恢复历史快照）。确认不再需要历史快照时加 `--purge`：
-
-```bat
-node tools\uninstall.mjs --purge
-```
-
-常用参数：
-
-| 参数 | 作用 |
-|---|---|
-| `--purge` | 连带删除 `undo\`（设置/状态）与 `undo-snapshots\`（快照库） |
-| `--yes` | 跳过确认（非交互环境必须显式给出，防脚本误删） |
-| `--home <dir>` | 覆盖 DSH 主目录 |
-| `--profile <n>` | 只处理指定 profile（默认全部） |
-| `--json` | 输出机器可读的清理计划 |
-
-不带 `--yes` 时，命令先列出**每一项将要删除的路径**再询问；非交互环境（CI/管道）会拒绝执行，必须显式 `--yes`。
-
-### 手动卸载对照表
-
-确实要手动清理时，六处落盘位置与各自的正确删法：
-
-| # | 落盘位置 | 正确删法 |
-|---|---|---|
-| 1 | `<DSH安装根>\node_modules\dsh-undo-savepoint`（或 profile 的 `node_modules` 下） | **删除链接本体，勿跟随**。这是 junction，直接删除即可；在资源管理器里进入它再删内容，删的是你的插件源码 |
-| 2 | `<DSH_HOME>\profiles\<profile>\cordis.patch.yml` 里的 `id: dsh-undo-savepoint` 条目 | 手工摘掉该 `insert` 条目（可整条删）；文件变空可直接删文件 |
-| 3 | `<DSH_HOME>\profiles\<profile>\package.json` 的 `dsh.profile.bundles` 数组 | 从数组里移除 `dsh-undo-savepoint` 一项 |
-| 4 | `<DSH_HOME>\undo\` | 设置与状态（含 `settings.json`）。确认要重置设置时才删 |
-| 5 | `<DSH_HOME>\undo-snapshots\` | 快照库。**先确认不再需要回退**再删 |
-| 6 | 桌面 `dsh-undo-savepoint.lnk`（macOS `.command` / Linux `.desktop`） | 直接删除 |
-
-### Windows 长路径提示
-
-Windows 用户目录较深或使用中文用户名时，快照文件的路径可能超出资源管理器（MAX_PATH 260）的删除上限，手删会报「文件名过长」或删到一半留下残骸。**推荐用上面的 `uninstall.mjs`**：它按固定路径逐项删除，不遍历快照内部结构，不受该限制。
-
-## 使用（DSH 内）
-
-| 会话头部：撤销 / 恢复 / 快照 / 对话撤回全部图标化，右侧是自动快照状态徽章 |
-|---|
-| ![header](https://cdn.jsdelivr.net/gh/lire1131/dsh-undo-savepoint@master/docs/shots/webui-header.png) |
+## 使用
 
 - **撤销**：头部「撤销」按钮 / `Ctrl+Alt+Z` / 对 AI 说「撤销上一步」。
 - **恢复**：「恢复」按钮 / `Ctrl+Alt+Y`（仅当撤销后没有新操作）。
-- **手动保存**：面板里「手动保存」/ 对 AI 说「保存快照」/ CLI `snapshot`。
-- **回退到指定版本**：面板里点快照行「回退到此版本」；或对 AI 说「回退到 \<id\>」；或 CLI `restore -Id <id>`。
-- **删除快照**：面板里点「删除」；或 CLI `remove -Id <id>`。
+- **手动保存**：面板「手动保存」/ 对 AI 说「保存快照」。
+- **回退到指定版本**：面板里点快照行「回退到此版本」。
+- **删除快照**：面板里点「删除」。
 - **消息级撤销**：对话头部「对话撤回」，选择消息批次撤回其文件改动。
-- **自定义快捷键**：设置 → 通用 → 撤销 / 恢复快捷键（点击输入框后按组合键，Backspace 清除）。
-- **保存参数**：设置 → 通用 → 快照设置（自动保存开关、防抖、保留数、两个目录、跟踪工作区目录，目录旁 📁 按钮可打开系统目录选择器）。其中「跟踪工作区目录」逗号 / 分号多选，非空时覆盖默认工作目录。
+- **设置**：通用页可改自动保存、防抖、保留数、两个快照目录与跟踪工作区目录。
 
-| 对话级撤回：按消息批次回滚该批改动（时间可回溯到任意一轮对话之后） |
-|---|
-| ![msgundo](https://cdn.jsdelivr.net/gh/lire1131/dsh-undo-savepoint@master/docs/shots/message-undo.png) |
+## DSH 起不来时
 
-| 差异预览：文件级变更红删绿增，确认无误再回滚 | 编辑备注 / 标签：快照列表里直接改 |
-|---|---|
-| ![webdiff](https://cdn.jsdelivr.net/gh/lire1131/dsh-undo-savepoint@master/docs/shots/webui-diff.png) | ![note](https://cdn.jsdelivr.net/gh/lire1131/dsh-undo-savepoint@master/docs/shots/webui-note.png) |
-
-## 局外工具（DSH 挂了也能用）
-
-### 局外 WebUI（推荐，全平台）
+运行局外 WebUI，不依赖 DSH。
 
 ```bash
-node tools/undo-server.mjs     # 或双击 launch-undo.bat / .command / .sh / .desktop
+node tools/undo-server.mjs
 ```
 
-拉起纯本地 `127.0.0.1` 服务器 + 内置网页：时间线 / 回滚 / 对比 / 安全模式 / 诊断，双击即用，不依赖 DSH。插件加载后还会自动在桌面创建「dsh-undo-savepoint」快捷方式，双击直接打开。诊断面板不只看得见问题，也能修：可修项会标「可修复」，点「修复可修项」即就地修好（修前自动落一个手动快照，修完立刻复查）。
+时间线、回滚、对比、诊断与安全模式都在这个本地页面里。插件加载后会自动创建桌面快捷方式，双击也能打开。需要一键禁用除本插件外的全部用户插件时，用安全模式，重启 DSH 后再逐个排查。
 
-| 桌面 GUI 窗口：不依赖浏览器，时间线与诊断同源 |
-|---|
-| ![gui](https://cdn.jsdelivr.net/gh/lire1131/dsh-undo-savepoint@master/docs/shots/gui-main.png) |
+## 支持范围
 
-| 桌面快捷方式：插件加载后自动创建，双击直接打开局外 WebUI |
-|---|
-| ![shortcut](https://cdn.jsdelivr.net/gh/lire1131/dsh-undo-savepoint@master/docs/shots/shortcut-icon.png) |
+`package.json` 的 `engines.dsh` 覆盖 0.1.x 与 0.2.x 的历次声明，末段为 `>=0.2.2-0`。已验证桌面版 DSH 0.2.0-rc.2、0.2.1-rc.3 与 0.2.1-rc.5；0.2.2-rc.1 在隔离实例里验证过宿主激活与客户端装配，桌面形态待维护者机器复核。
 
-| 快照对比：文件列表 + 变更统计（+8 / -2）+ 行级差异高亮 | 局外设置：防抖 / 保留数量 / 脱敏模式 / 目录选择 / 桌面快捷方式 |
-|---|---|
-| ![guidiff](https://cdn.jsdelivr.net/gh/lire1131/dsh-undo-savepoint@master/docs/shots/gui-diff.png) | ![guisettings](https://cdn.jsdelivr.net/gh/lire1131/dsh-undo-savepoint@master/docs/shots/gui-settings.png) |
-
-### 工具位置
-
-局外工具（GUI 窗口 + 命令行）不装到桌面，而是随插件装在安装目录里：
-
-| 安装方式 | 工具位置 |
-|---|---|
-| 方式 A：`dsh plugin add` | `$DSH_HOME\profiles\web\node_modules\dsh-undo-savepoint\tools\`（DSH_HOME 默认 `%USERPROFILE%\.dsh`） |
-| 方式 B：clone + junction | 你 clone 的目录 `...\dsh-undo-savepoint\tools\` |
-
-<details>
-<summary>一键创建桌面快捷方式（点开查看 PowerShell 命令）</summary>
-
-双击 `tools\make-desktop-shortcut.bat`（自动定位插件目录），桌面出现「DSH撤销管理器」图标；或把下面整段复制到 PowerShell 窗口回车：
-
-```powershell
-$dshHome = if ($env:DSH_HOME) { $env:DSH_HOME } else { "$env:USERPROFILE\.dsh" }
-$d = @("$dshHome\profiles\web\node_modules\dsh-undo-savepoint", "$dshHome\profiles\node_modules\dsh-undo-savepoint", "$env:USERPROFILE\node_modules\dsh-undo-savepoint") | Where-Object { Test-Path (Join-Path $_ 'tools\dsh-undo-savepoint-gui.bat') } | Select-Object -First 1
-if ($d) {
-  $w = New-Object -ComObject WScript.Shell
-  $s = $w.CreateShortcut((Join-Path ([Environment]::GetFolderPath('Desktop')) 'DSH撤销管理器.lnk'))
-  $s.TargetPath = Join-Path $d 'tools\dsh-undo-savepoint-gui.bat'
-  $s.WorkingDirectory = Join-Path $d 'tools'
-  $s.Save()
-  Write-Host "已创建桌面快捷方式：$($s.FullName)"
-} else { Write-Host '未找到插件目录，请先安装：dsh plugin --profile web add github:lire1131/dsh-undo-savepoint#master' }
-```
-
-只想打开工具目录看一眼：
-
-```powershell
-$dshHome = if ($env:DSH_HOME) { $env:DSH_HOME } else { "$env:USERPROFILE\.dsh" }
-explorer "$dshHome\profiles\web\node_modules\dsh-undo-savepoint\tools"
-```
-
-</details>
-
-### 命令行（Windows PowerShell）
-
-进入仓库目录后：
-
-```powershell
-# 程序窗口（推荐）：双击 tools\dsh-undo-savepoint-gui.bat，或：
-powershell -NoProfile -ExecutionPolicy Bypass -File "tools\dsh-undo-savepoint-gui.ps1"
-
-# 命令行
-powershell -NoProfile -ExecutionPolicy Bypass -File "tools\dsh-undo.ps1" list
-powershell -NoProfile -ExecutionPolicy Bypass -File "tools\dsh-undo.ps1" snapshot -Label "原因"
-powershell -NoProfile -ExecutionPolicy Bypass -File "tools\dsh-undo.ps1" undo
-powershell -NoProfile -ExecutionPolicy Bypass -File "tools\dsh-undo.ps1" undo -SyncDeps
-powershell -NoProfile -ExecutionPolicy Bypass -File "tools\dsh-undo.ps1" redo
-powershell -NoProfile -ExecutionPolicy Bypass -File "tools\dsh-undo.ps1" restore -Id <id> -Force
-powershell -NoProfile -ExecutionPolicy Bypass -File "tools\dsh-undo.ps1" restore -Id <id> -Force -SyncDeps
-powershell -NoProfile -ExecutionPolicy Bypass -File "tools\dsh-undo.ps1" remove -Id <id>
-powershell -NoProfile -ExecutionPolicy Bypass -File "tools\dsh-undo.ps1" prune -KeepAuto 20
-
-# 启动预检（DSH 起不来时也能用）；-Fix 修复可修项
-powershell -NoProfile -ExecutionPolicy Bypass -File "tools\dsh-undo.ps1" doctor
-powershell -NoProfile -ExecutionPolicy Bypass -File "tools\dsh-undo.ps1" doctor -Fix
-
-# 安装插件（自动前后存档，失败自动回退）
-powershell -NoProfile -ExecutionPolicy Bypass -File "tools\dsh-plugin.ps1" add <包名>
-```
-
-### 界面语言
-
-`DSH_UNDO_LANG=zh|en` 强制指定；未设置时中文系统默认中文、否则英文。服务端输出、离线 CLI / GUI、WebUI 全部生效，词典源统一为 `lib/i18n/{zh,en}.json`。
-
-> 常见事故：**DSH 启动报 `duplicate loader entry id` 之类错误** → 打开「DSH撤销管理器」选中出问题前的快照 → 回退 → 重启 DSH。不用重装、不丢会话。
-
-## 快照内容与存储
-
-快照对象是 DSH 的启动关键配置：`cordis.patch.yml`、`package.json`、`cordis.yml`、`pnpm-workspace.yaml`、`pnpm-lock.yaml`（profile 下）+ `cordis.patch.yml`、`settings.yaml`、`.env`、`.credentials.yaml`（`$DSH_HOME` 下，默认 `~/.dsh`）。
-
-恢复涉及 `package.json` / `pnpm-lock.yaml` 时，默认只报告 `node_modules` 可能不同步；需要真正重建依赖时加 `-SyncDeps`（离线 CLI）、`sync_deps: true`（对话工具）或 `syncDeps: true`（REST），插件会执行 `pnpm install --frozen-lockfile`（无 lockfile 时普通 `pnpm install`）。安装失败不影响已经还原的配置文件。
-
-| 库 | 默认路径（可在设置中修改） | 内容 |
-|---|---|---|
-| 手动库 | `<快照根>\manual\` | 手动保存的快照（永不自动清理） |
-| 自动库 | `<快照根>\auto\` | 自动快照、启动基线、撤销后悔档（自动档保留最近 20 份） |
-| 旧库（兼容） | `<快照根>\` 根 | 旧版扁平布局，读取兼容，启动时自动迁移到新库 |
-
-> ⚠️ 快照含 `.env` 等配置副本，可能含密钥，不要外传。
-
-> 体积纪律：单个快照引用体积 ≤5MB（manifest 记录 `totalBytes`，`undo_list` 展示）；插件代码树超限时**只记清单 + 标记 `[truncated]` 告警，不丢任何数据**，可手动快照 / 导出兜底。无外部插件时快照仅配置文件（KB 级）；插件整体体积门禁 5MB（当前产物约 0.6MB）。
-
-## 多 Profile 与自定义家目录
-
-**多 Profile**（v0.3.3 起）：插件从启动参数自动识别当前 profile（`dsh --profile mine` / `--profile=mine`；`dsh web` 回退为 `web`），并按当前 profile 工作：
-
-- **配置目录**：默认 `$DSH_HOME/profiles/<当前 profile>`（DSH_HOME 默认 `~/.dsh`）；
-- **快照仓库**：默认 `<快照根>/<当前 profile>/{auto,manual}`（按 profile 隔离）；作用域目录不存在而旧版平铺目录存在时自动回退平铺，旧快照不会「隐身」；
-- **归属标识**：快照 manifest 记录 `profile` 字段，`undo_list` 显示当前 profile。
-
-离线 CLI / GUI 看不到启动参数，通过环境变量 `DSH_UNDO_PROFILE` 或 settings 里的 `profileName` 指定（默认 `web`）。
-
-**自定义家目录**（v0.3.5 起，issue #6）：与官方启动器（`@deepseek-ai/dsh-home-paths`）解析完全一致，**`DSH_HOME` 环境变量优先**（空白视为未设置，支持 `~` / `~/` / `~\` 前缀），否则回退 `<用户家目录>\.dsh`。设置文件（`$DSH_HOME\undo\settings.json`）、默认快照根（`$DSH_HOME\undo-snapshots`）、profile 目录、home 根、插件发现路径全部基于它，第三方客户端不再出现「两套家分裂」，重启后自定义目录稳定保留。
-
-**显式覆盖始终优先**：环境变量 `DSH_UNDO_SETTINGS` / `DSH_UNDO_ROOT` / `DSH_UNDO_EXPORT`，以及 config 里的 `homeDir` / `profileDir` / `manualDir` / `autoDir` / `profileName`。
-
-## REST API（WebUI 的后端）
-
-| 端点 | 说明 |
-|---|---|
-| `GET /api/undo/status` | `{canUndo, canRedo, total, bootAlert, safeModeActive, ...}` |
-| `GET /api/undo/list` | 快照列表（含 location: manual/auto/legacy） |
-| `GET /api/undo/diff` | `?id=<id>` 指定快照与当前的文件级结构化 diff |
-| `GET /api/undo/tree` | 目录树 diff（按目录聚合，增 / 删 / 改着色） |
-| `GET /api/undo/doctor` | 一键诊断（store 可写性 / blob 完整性 / settings / 规模）＋ 启动预检（清单 BOM / bundles / junction / 重复 loader id / 上次启动未完成） |
-| `POST /api/undo/doctor/fix` | 修复启动预检里的可修项（剥清单与 patch 的 BOM、按 id 去重 loader 条目、重建缺失或悬空的插件 junction），改前先落一个手动快照，返回修复清单 + 复查报告 |
-| `GET / POST /api/undo/settings` | 读 / 写保存参数（自动保存、防抖、保留数、目录），POST 即时生效 |
-| `POST /api/undo/undo` | 撤销上一步；可选 body `{syncDeps: true}` 按还原后的 lockfile 重建 `node_modules` |
-| `POST /api/undo/redo` | 恢复；可选 body `{syncDeps: true}` |
-| `POST /api/undo/restore` | body `{id, syncDeps?}` 回退到指定版本 |
-| `POST /api/undo/remove` | body `{id}` 删除快照 |
-| `POST /api/undo/snapshot` | body `{reason}` 手动保存 |
-| `POST /api/undo/note` | 快照备注 / 标签 |
-| `POST /api/undo/messages` / `message` | 消息级撤销：列出 / 撤回指定消息批次的文件改动 |
-| `POST /api/undo/prune` | 立即执行过期快照清理 |
-| `POST /api/undo/export` / `import` | 导出 / 导入全部快照 ZIP（纯 Node，兼容 PowerShell） |
-| `POST /api/undo/safe-mode` | body `{on}` 进入 / 退出安全模式 |
-| `POST /api/undo/pick-dir` / `pick-file` | 弹出系统目录 / 文件选择器（按平台分发），返回选中路径 |
-| `GET /api/undo/locale` | 返回当前语言（`DSH_UNDO_LANG` 或 auto） |
-
-## 设计要点
-
-- **撤销语义**：自动快照在变更**之后**生成，所以「恢复最新存档」是空操作；真实撤销 = 回退到与当前状态**内容不同**的最新快照；全部相同则明确提示「没有可撤销的变化」。
-- **撤销不会撤销掉自己**：恢复 `cordis.patch.yml` 后自动检查并重新写入 dsh-undo-savepoint 挂载条。
-- **自动存档不误伤撤销**：watcher 记录恢复操作写入的内容哈希，恢复动作自己的文件变化不会被自动存档（否则会挡住 redo）；真实变更照常存档。
-- **格式互通**：Node 插件与 PowerShell 工具共用快照仓库与 manifest 格式；Windows PowerShell 5.1 与 PowerShell 7 均兼容。
-
-## 开发与测试
-
-- **依赖解析**：host 插件通过 `createRequire(<DSH安装根>/package.json)` 加载 `@deepseek-ai/dsh-tools`（环境变量 `DSH_ROOT` 可覆盖），无需在仓库内安装依赖。
-- **测试**（不需要 DSH 运行，在仓库目录执行）：
+DSH 0.2.2 起宿主要求 Node.js 24.9，本插件离线工具仍只要求 20，两者分开判定。版本不在声明范围内时，不要改 `package.json`，用官方的版本豁免。
 
 ```bat
-node tools\smoke-test.mjs     :: 189 项逻辑测试（快照/撤销/重做/存储分流/无变化提示/消息级撤销/孤儿GC/zip互操）
-node tools\e2e-watch.mjs      :: 10 项真实时序回归（自动存档/撤销不误伤/重做）
-node tools\check-size.mjs     :: 体积门禁（<5MB）
-node tools\check-version.mjs  :: 版本号 semver 校验
+dsh plugin --profile web allow-version dsh-undo-savepoint@0.5.1 --dsh-version <运行时版本> --accept-risk
 ```
 
-## License
+## 卸载
 
-MIT
+```bat
+dsh plugin remove dsh-undo-savepoint
+node tools/uninstall.mjs
+```
+
+`uninstall.mjs` 默认摘掉挂载声明、junction 与桌面快捷方式，保留快照库与设置。确认不再需要历史快照时加 `--purge`。
+
+```bat
+node tools/uninstall.mjs --purge
+```
+
+## 快照存放与安全
+
+快照默认在 `$DSH_HOME\undo-snapshots`，按 profile 分 manual 与 auto 两个库，手动库不自动清理。快照会复制 `.env` 等配置，可能含密钥；插件写入时对敏感文件做脱敏，真实值只存本机 vault。快照库仍是本机敏感目录，不要外传。
+
+## 更多
+
+- 版本变更见 [CHANGELOG.md](CHANGELOG.md)。
+- English README 见 [README.en.md](README.en.md)。
+- License: MIT
