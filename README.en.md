@@ -45,33 +45,36 @@ It checks proactively and speaks only when something is wrong. A DSH version cha
 
 Prerequisites: DSH (`@deepseek-ai/dsh`) and Node.js. DSH 0.2.2 and newer require Node.js ≥24.9 on the host; the plugin's offline CLI / GUI needs only ≥20.
 
-### Option A (GitHub direct)
+### Desktop installation (recommended)
 
-```bat
-dsh plugin --profile web add github:lire1131/dsh-undo-savepoint#v0.5.1
-```
+The desktop build is the main path and runs the `desktop profile`. Launch the desktop client once so the profile initialises, then quit it **completely** before installing.
 
-### Option B (npm registry)
-
-```bat
-dsh plugin --profile web add dsh-undo-savepoint@0.5.1
-```
-
-Without a version it installs npm's latest. Restart DSH after installing.
-
-### Install-time environment check
-
-The install hooks check the external Node.js, PowerShell, the platform and whether the DSH home is writable. Set `DSH_UNDO_SKIP_ENV_CHECK=1` to skip the check.
-
-### Desktop
-
-The desktop build runs the `desktop profile`; swap `web` for `desktop`. Launch the desktop client once so the profile initialises, then quit it **completely** before installing.
+GitHub direct.
 
 ```bat
 dsh plugin --profile desktop add github:lire1131/dsh-undo-savepoint#v0.5.1
 ```
 
-When DSH from 0.2.0-rc.2 on the desktop hits a fatal error, the official recovery dialog's third button drops third-party bundle entries and backs the patch up to `cordis.patch.yml.bak-<timestamp>`, keeping the package. No reinstall is needed after that, only restoring the mount declaration. Safe mode is refused by default on the desktop build; a request carrying `confirmDesktop` takes a pre-safe-mode snapshot before writing, and the third button of the official dialog remains the preferred escape path.
+npm registry.
+
+```bat
+dsh plugin --profile desktop add dsh-undo-savepoint@0.5.1
+```
+
+Restart DSH after installing. When DSH from 0.2.0-rc.2 on the desktop hits a fatal error, the official recovery dialog's third button drops third-party bundle entries and backs the patch up to `cordis.patch.yml.bak-<timestamp>`, keeping the package. No reinstall is needed after that, only restoring the mount declaration. Safe mode is refused by default on the desktop build; a request carrying `confirmDesktop` takes a pre-safe-mode snapshot before writing, and the third button of the official dialog remains the preferred escape path.
+
+### Web profile installation
+
+Swap the profile to `web`.
+
+```bat
+dsh plugin --profile web add github:lire1131/dsh-undo-savepoint#v0.5.1
+dsh plugin --profile web add dsh-undo-savepoint@0.5.1
+```
+
+### Install-time environment check
+
+The install hooks check the external Node.js, PowerShell, the platform and whether the DSH home is writable. Set `DSH_UNDO_SKIP_ENV_CHECK=1` to skip the check.
 
 ## Usage
 

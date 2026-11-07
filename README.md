@@ -45,33 +45,36 @@
 
 前置：已安装 DSH（`@deepseek-ai/dsh`）与 Node.js。DSH 0.2.2 及以后版本的宿主要求 Node.js ≥24.9；本插件的离线 CLI / GUI 只要求 ≥20。
 
-### 方式 A：GitHub 直装（推荐）
+### 桌面端安装（推荐）
 
-```bat
-dsh plugin --profile web add github:lire1131/dsh-undo-savepoint#v0.5.1
-```
+桌面端是主要使用场景，走 `desktop profile`。先启动一次桌面端完成初始化，再**完全退出**桌面客户端后执行安装。
 
-### 方式 B：npm 源安装
-
-```bat
-dsh plugin --profile web add dsh-undo-savepoint@0.5.1
-```
-
-不带版本号时安装 npm 上的 latest。安装完成后重启 DSH 即生效。
-
-### 安装期环境自检
-
-安装钩子会检查外部 Node.js、PowerShell、平台与 DSH home 可写性。设置 `DSH_UNDO_SKIP_ENV_CHECK=1` 可跳过整个自检。
-
-### 桌面端
-
-桌面版走 `desktop profile`，命令把 `web` 换成 `desktop`。先启动一次桌面端完成初始化，再**完全退出**桌面客户端后执行安装。
+GitHub 直装。
 
 ```bat
 dsh plugin --profile desktop add github:lire1131/dsh-undo-savepoint#v0.5.1
 ```
 
-DSH 0.2.0-rc.2 起的桌面版遇到致命错误会弹官方恢复窗，第三个按钮会摘掉第三方插件的 bundles 条目，并把补丁备份为 `cordis.patch.yml.bak-<时间戳>`，包本体保留。被禁用后不需要重装，恢复挂载声明即可。桌面形态下 safe-mode 默认拒绝执行，带 `confirmDesktop` 的显式确认会先落前置快照再写文件；官方恢复窗第三个按钮仍是首选逃生路径。
+npm 源安装。
+
+```bat
+dsh plugin --profile desktop add dsh-undo-savepoint@0.5.1
+```
+
+安装完成后重启 DSH 即生效。DSH 0.2.0-rc.2 起的桌面版遇到致命错误会弹官方恢复窗，第三个按钮会摘掉第三方插件的 bundles 条目，并把补丁备份为 `cordis.patch.yml.bak-<时间戳>`，包本体保留。被禁用后不需要重装，恢复挂载声明即可。桌面形态下 safe-mode 默认拒绝执行，带 `confirmDesktop` 的显式确认会先落前置快照再写文件；官方恢复窗第三个按钮仍是首选逃生路径。
+
+### Web profile 安装
+
+把 profile 换成 `web`。
+
+```bat
+dsh plugin --profile web add github:lire1131/dsh-undo-savepoint#v0.5.1
+dsh plugin --profile web add dsh-undo-savepoint@0.5.1
+```
+
+### 安装期环境自检
+
+安装钩子会检查外部 Node.js、PowerShell、平台与 DSH home 可写性。设置 `DSH_UNDO_SKIP_ENV_CHECK=1` 可跳过整个自检。
 
 ## 使用
 
