@@ -1400,7 +1400,7 @@ console.log('== B4b. patch manifest: multi-version substrings + client declarati
       && JSON.stringify(dshSegs.slice(0, -1)) === JSON.stringify([...w42Base, '>=0.2.1-0']),
     'W42: engines.dsh 末段为 >=0.2.2-0 且前九段逐字保留（OR 串未重构）',
   );
-  check(pkg.version === '0.5.0', 'W42: package.json version 为 0.5.0（stable 定稿）');
+  check(pkg.version === '0.5.1', 'W42: package.json version 为 0.5.1（stable 定稿）');
   const readmes42 = [
     ['README.md', '桌面端'],
     ['README.en.md', 'Desktop'],
@@ -3431,7 +3431,7 @@ await rm(root, { recursive: true, force: true });
     );
     const mk50 = async (tag, {
       backup = BAK50_TEXT, cur = BAK50_TEXT + CUR50_BODY,
-      bundles = ['@deepseek-ai/dsh-base', 'dsh-undo-savepoint'], ageBak = 0, patchOlder = false,
+      bundles = ['@deepseek-ai/dsh-base', 'dsh-undo-savepoint'], deps = null, ageBak = 0, patchOlder = false,
     } = {}) => {
       const h = join(w50root, `home-${tag}`);
       const d = join(h, 'profiles', 'desktop');   // 末级名必须 desktop，桌面判定按目录末级名（E83）
@@ -3439,8 +3439,9 @@ await rm(root, { recursive: true, force: true });
       // 官方动作序列必然是「先备份后重建」：写文件顺序即 mtime 顺序（先 bak 后 patch）。
       if (backup !== null) await writeFile(join(d, BAK50), backup);
       await writeFile(join(d, 'cordis.patch.yml'), cur);
-      await writeFile(join(d, 'package.json'),
-        `{"name":"desktop-profile","dsh":{"profile":{"bundles":${JSON.stringify(bundles)}}}}${NL}`);
+      const manifest50 = { name: 'desktop-profile', dsh: { profile: { bundles } } };
+      if (deps) manifest50.dependencies = deps;
+      await writeFile(join(d, 'package.json'), `${JSON.stringify(manifest50)}${NL}`);
       const now = Math.floor(Date.now() / 1000);
       if (backup !== null && ageBak) {
         await utimes(join(d, BAK50), now + ageBak, now + ageBak);      // 正数 = 备份更新（倒挂）
@@ -3453,7 +3454,18 @@ await rm(root, { recursive: true, force: true });
     const codes50 = (report) => report.checks.filter((c) => c.code === 'pre-partial-sanitize');
 
     // (1) 正例：备份四条齐全、当前补丁缺这四条 ⇒ warn 且 fixable，缺失清单逐名列出。
-    const f50 = await mk50('full', { cur: CUR50_BODY + TAIL50, patchOlder: true });
+    // deps 覆盖缺失条目对应的包，模拟「bundles 已恢复、包还在装」的官方 sanitize 场景。
+    const f50 = await mk50('full', {
+      cur: CUR50_BODY + TAIL50,
+      patchOlder: true,
+      deps: {
+        '@deepseek-ai/dsh-client-ui-settings-general': 'link:../ui-settings-general',
+        '@deepseek-ai/dsh-agent-default-model': 'link:../agent-default-model',
+        '@deepseek-ai/dsh-mcp-client': 'link:../mcp-client',
+        '@deepseek-ai/dsh-client-ui-chat': 'link:../ui-chat',
+        '@deepseek-ai/dsh-agent-preset-registry': 'link:../agent-preset-registry',
+      },
+    });
     const hit50 = codes50(await core.runDoctor(f50.cfg));
     check(hit50.length === 1 && hit50[0].level === 'warn' && hit50[0].fixable === true,
       `W50: 补丁内容缺失命中 warn 且 fixable（命中 ${hit50.length} 条${hit50[0] ? '，level=' + hit50[0].level : ''}）`);
@@ -3498,6 +3510,12 @@ await rm(root, { recursive: true, force: true });
     check(fix50.applied.some((a) => a.code === 'pre-partial-sanitize' && a.ok === true
       && /moved 4 missing entries/.test(a.action)),
       `W50: 记账写明搬回 4 条（${fix50.applied.find((a) => a.code === 'pre-partial-sanitize')?.action ?? '无'})`);
+    check(fix50.patchEntriesMoved === 4
+      && fix50.applied.find((a) => a.code === 'pre-partial-sanitize')?.moved === 4,
+      `W50: 主报告合计追加 4 条（patchEntriesMoved=${fix50.patchEntriesMoved}）`);
+    check(t50('doctor.fixPatchMoved', { n: 4 }, 'zh').includes('4')
+      && t50('doctor.fixPatchMoved', { n: 4 }, 'en').includes('4'),
+      'W50: 修复报告追加条数的中英双语键就位');
     check(fix50.snapshotId !== null && codes50(fix50.report).length === 0,
       'W50: 修前快照存在（doctor-fix-before）且复检不再命中');
     check(codes50(await core.runDoctor(f50.cfg)).length === 0 && core.findDanglingInserts(after50).length === 0,
@@ -3527,6 +3545,31 @@ await rm(root, { recursive: true, force: true });
       `W50: 仅顶层键差异降为 info 且无 fixable（实得 ${hit50Cfg.length} 条${hit50Cfg[0] ? '，level=' + hit50Cfg[0].level : ''}）`);
     check(hit50Cfg[0]?.detail.includes('agent-default-model') && !hit50Cfg[0]?.detail.includes('mcp-chinese-law'),
       'W50: info 只列顶层键、不列 insert 条目');
+    // #55 主场景：info 级只报告，fix 不再写补丁。
+    const infoBefore50 = await readFile(join(f50CfgOnly.dir, 'cordis.patch.yml'), 'utf8');
+    const fix50Info = await core.runDoctorFix(f50CfgOnly.cfg);
+    check((await readFile(join(f50CfgOnly.dir, 'cordis.patch.yml'), 'utf8')) === infoBefore50
+      && !fix50Info.applied.some((a) => a.code === 'pre-partial-sanitize')
+      && fix50Info.patchEntriesMoved === 0,
+      'W50: info 级检出不再触发 fix 写补丁（#55）');
+    check(t50('doctor.partialSanitizeInfo', {}, 'zh').includes('fix 不会自动搬回')
+      && t50('doctor.partialSanitizeInfo', {}, 'en').includes('fix will not move'),
+      'W50: info 文案写明 fix 不会搬回');
+    // #55 第二道守卫：缺失条目的包已经不在 dependencies / bundles / node_modules 时跳过，
+    // 不能把已卸载插件的挂载从旧备份搬回来。
+    const BAK50_GONE = L('- insert:', '    - id: gone-plugin', "      name: '@deepseek-ai/dsh-gone'");
+    const CUR50_GONE = L('- insert:', '    - id: dsh-undo-savepoint');
+    const f50Gone = await mk50('gone', { backup: BAK50_GONE, cur: CUR50_GONE });
+    const goneBefore50 = await readFile(join(f50Gone.dir, 'cordis.patch.yml'), 'utf8');
+    const fix50Gone = await core.runDoctorFix(f50Gone.cfg);
+    const goneRec50 = fix50Gone.applied.find((a) => a.code === 'pre-partial-sanitize');
+    check((await readFile(join(f50Gone.dir, 'cordis.patch.yml'), 'utf8')) === goneBefore50
+      && !goneBefore50.includes('gone-plugin')
+      && fix50Gone.patchEntriesMoved === 0,
+      'W50: 已卸载插件的缺失条目在修复时跳过，补丁不写入');
+    check(goneRec50?.ok === true && /not installed/.test(goneRec50?.action ?? '')
+      && (goneRec50?.skipped ?? []).some((s) => s.name === '@deepseek-ai/dsh-gone'),
+      `W50: 跳过理由写进修复详情（${goneRec50?.action ?? '无记录'}）`);
 
     // (7) 负例：同键名不同值（用户 sanitize 后自己重配过，是合法状态）。
     const cur50Valued = (BAK50_TEXT + CUR50_BODY)

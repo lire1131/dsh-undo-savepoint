@@ -2,6 +2,56 @@
 
 dsh-undo-savepoint 的重要变更。日期为本地时间（UTC+8)。English version: [CHANGELOG.en.md](CHANGELOG.en.md)
 
+## [0.5.1] - 2026-11-07
+
+### 新增
+
+- **端口与 profile 两维切库**。实例配置新增可选 port 与 currentProfile，局外先选端口再看该端口的 web 或 desktop 库，局内固定本端口、在两个 profile 之间切；库根按 home 与 profile 解析，有分片读分片，只有历史平铺库时读平铺并标注共享库。
+- **面板与局外 WebUI 重做**。两端统一为「实例(端口) → Profile → 快照库」流程条与状态条，对比浮层按配置、插件、Profile 代码分组，左栏文件导航带增删行数，右栏逐行红绿，支持折叠、Esc 关闭与错误重试。
+- **设置文件三处同源并热重读**。局内面板、插件详细页与局外 WebUI 显示同一个 settingsFile；切库时加载目标实例自己的设置，读取与保存后都会重读，写回不丢 instances 与 current。
+- **扫描本机实例**。两端新增扫描接口，列出本机 DSH 端口、进程、可探测到的 profile 与快照数，只做建议、不自动写配置，超时或命令缺失返回空列表。
+- **共享库过滤与归属三态**。每条快照按清单里的 profile 标归属，命中、非本 profile、归属未知三种状态分开处理；默认按所选 profile 过滤，另设「显示共享库全部」开关可看全部并逐条标注。
+- **桌面 profile 安全模式二次确认**。默认仍拒动，带确认的显式请求才允许写文件，动作前先落安全模式前置快照并备份 profile 包清单。
+- **对话头三档自适应**。新增 headerMode 设置，取值 auto、full、compact，默认 auto；宽档显示文字、中档只留图标、窄档收成撤销加一个单入口菜单（撤销、重做、创建快照、对话撤回、快照管理）。
+- **插件页显示插件图标**。包清单新增 icon 字段，DSH 0.2.1 起插件页与插件卡片显示与桌面快捷方式同款的图标。
+- **桌面快捷方式有效性自检**。读回快捷方式的目标、参数与工作目录并与当前安装位置比对，一致时跳过并保留自定义图标，不一致时重写，诊断里给出可修提醒。
+- **安装期环境自检**。`dsh plugin add` 的安装钩子检查外部 Node.js、PowerShell、平台与 DSH home 可写性；外部 node 缺失或低于 20、DSH home 不可写为阻断项，PowerShell 缺失、非 Windows 平台、node 低于 24.9 为提示项，`DSH_UNDO_SKIP_ENV_CHECK=1` 可跳过。
+- **客户端装配状态可见**。五个槽位注册点逐个记录失败标签，`document.documentElement.dataset.undoClient` 写 `ready` 或 `degraded`，控制台同步一条汇总，现场一条查询即可区分「apply 没执行」与「注册被吞」（#54）。
+- **宿主内部包检查**。profile 根的 `node_modules/@deepseek-ai/` 下混入宿主内部包副本时按来源与版本分档，清单里声明的、链接指进宿主安装树的、与宿主同版本的放行，版本不一致或版本读不到才报 error，详情给出副本版本、宿主版本与版本来源；共享树 `profiles/node_modules` 下的异版本副本只报 warn、不改名（#49）。
+- **DSH 0.2.2 线适配声明**。`engines.dsh` 末段追加 `>=0.2.2-0`，README 双语与离线启动提示写清双口径，DSH 0.2.2 宿主需要 Node.js 24.9，本插件离线工具最低 20。
+
+### 变更
+
+- **实例配置形状与 REST 契约**。instances 每项新增可选 port，新增 currentProfile，旧配置仍可读，缺 port 时只按 home 读库、不探测端口；REST 契约变为双端 22 条、局内独有 2 条、局外独有 3 条，新增扫描接口，实例切换改为 `{switch:{instance, profile}}`，safe-mode 增加 profile 与 confirmDesktop。
+- **共享库默认按 profile 过滤**。平铺共享库不再把 web 与 desktop 混成一个列表；0.5.0 之前的清单没有 schemaVersion，profile 字段可能是默认值，这类快照归为归属未知，不再被任一 profile 视图误删。
+- **桌面 profile 安全模式从拒动改为确认后可用**。官方恢复弹窗的第三按钮仍是首选逃生路径；未带确认的请求仍在写盘前拒绝。
+- **安装提示的 Node.js 口径**。启动脚本与 README 统一写宿主 24.9 与离线工具 20 两条要求，两者分开判定。
+
+### 优化
+
+- **面板渲染与状态条**。卡片视图超过 200 条时只挂当前批，表格与卡片都按批渲染；共享库只在状态条出现一次并补设置文件项，表格的快照归属列保留。
+- **profile 目录识别**。`profiles/node_modules` 不再被当成一个 profile，只认 web、desktop 与带 package.json、`cordis*.yml` 的目录，流程条不再与快照库内容重叠。
+- **旧快照归属展示**。没有 schemaVersion 的旧清单显示为归属未知，可切「显示共享库全部」查看，不再按默认 profile 误判。
+
+### 修复
+
+- **部分 sanitize 的 info 级检出被修复动作搬回（#55）**。`doctor -Fix` 此前只判断检出非空，info 级也进入合并分支，用户主动删掉的顶层条目会被写回补丁。现在修复段只处理 warn 级检出，info 只报告、不改文件；合并前再按条目 `name:` 校验包是否仍在 dependencies、dsh.profile.bundles 或 node_modules 里，已卸载插件的条目跳过并把包名写进修复详情；修复主报告打印本次向补丁追加的条数。
+- **YAML 尾注释导致误报与重复搬回（#53）**。`entryIdOf` 的行尾锚定不认 `- id: x # 注释`，部分 sanitize 检出把已在的条目算成缺失，修复侧还会再搬回一条同 id 条目，宿主会以 duplicate loader entry id 拒绝启动。正则改为允许「空白加 #」的尾注释，`foo#bar` 这类完整标量不受影响。
+- **宿主内部包检查的 junction 误报（#49）**。`realpath` 解析失败时不再直接落 shadow，改读链接本身的文本，落在宿主树根或桌面产品树结构前缀内即按宿主树内链接放行，详情保留链接状态；实体异版本副本仍报 error。
+- **客户端入口在 0.2.2-rc.1 桌面端消失的现场定位（#54）**。五个槽位注册点逐个记录失败，客户端状态写入 `dataset.undoClient`，控制台输出汇总；隔离实例实测 `client ready (5/5 slots)`，桌面形态仍待维护者机器复核。
+- **窄窗口浮层被裁切（#52）**。快照面板与对话撤回浮层改挂到 body 上渲染，遮罩覆盖整个视口、面板按视口居中，不再受宿主头部容器的溢出规则影响；面板同时改成底部抽屉，表格超宽可横向滚动。
+- **离线工具切 profile 后规格表指错根（#51）**。settings 的 profileName 生效后按新根重建快照文件清单，不再把 profile 文件指向 `profiles\web`；未设 profileName 且机器上只有一个含 `cordis.patch.yml` 的 profile 时自动选用并给出提示。
+- **对话头按钮在窄列溢出（#50）**。headerMode 的窄档把四个按钮收成一个入口，容器查询按实际可用宽度切档。
+- **补丁条目的第二类误报（#47）**。顶格条目与 `insert` 子条目同 id 时不再被判成重复挂载条目，代价是同文件两个顶格同 id 也不再提示，已知并记录。
+- **CI Node 22 矩阵暴露的平台差异**。宿主树前缀比对同时接受原样与 realpath 两种形态；readlink 读出的 Windows 设备前缀做归一化并还原 UNC；链接夹具的存在性判断改用 lstat，悬空链接不再被 fs.access 跟随。
+- **实例与 profile 切换的修正**。切 profile 后设置文件不再错位；端口被别的实例占用时保留用户配置的 home 并另给实测 home；未配置实例时局外 WebUI 仍显示当前 home，只隐藏下拉。
+
+### 测试
+
+- **门禁全量**。smoke 增至 663 项，host-api 36 项，undo-server 35 项，home-resolution 3 分支，e2e 14 项；check-routes 双端 22 条、局内独有 2 条、局外独有 3 条；check-size 1655430 字节；check-client-exports 8 项 GATE_OK。
+- **新增回归覆盖**。补丁尾注释解析与修复侧不搬回、宿主树链接文本兜底与共享树扫描、info 级不写补丁、已卸载条目跳过与主报告条数、客户端装配状态、安装期环境自检、面板 300 条阈值与对话头三档。
+- **CI 矩阵**。windows、ubuntu、macOS 三平台乘 Node 20 与 22，Node 22 暴露的路径与链接差异已固化为回归断言。
+
 ## [0.5.0] - 2026-10-20
 
 ### 新增

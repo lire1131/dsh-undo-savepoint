@@ -142,8 +142,8 @@ DSH 0.2.2 起宿主要求 Node.js 24.9，本插件的离线工具仍只要求 20
 
 ```bat
 dsh plugin --profile web version-exemptions
-dsh plugin --profile web allow-version dsh-undo-savepoint@0.5.0 --dsh-version <运行时版本> --accept-risk
-dsh plugin --profile web revoke-version dsh-undo-savepoint@0.5.0 --dsh-version <运行时版本>
+dsh plugin --profile web allow-version dsh-undo-savepoint@0.5.1 --dsh-version <运行时版本> --accept-risk
+dsh plugin --profile web revoke-version dsh-undo-savepoint@0.5.1 --dsh-version <运行时版本>
 ```
 
 第一条列出现有授权，第二条提交豁免，第三条撤销。豁免只授权加载，不授权依赖脚本；插件升级与 DSH 升级都不继承授权，每次都要重新确认。范围声明没有写死到最新版，是因为 DSH 各版仍可能有破坏性变动，新版本要实测过再扩范围。

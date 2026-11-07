@@ -65,7 +65,9 @@ if (args.fix) {
     console.log(`${a.ok ? '✅' : '❌'} ${a.code}  ${a.target}`);
     console.log(`   ${a.action}${a.error ? `\n   error: ${a.error}` : ''}`);
   }
-  console.log(`fixed: ${r.fixed}  failed: ${r.failed}\n`);
+  console.log(`fixed: ${r.fixed}  failed: ${r.failed}`);
+  if (r.patchEntriesMoved > 0) console.log(t('doctor.fixPatchMoved', { n: r.patchEntriesMoved }));
+  console.log('');
   console.log('== re-check after repair ==');
   printReport(r.report);
   process.exit(r.report.ok ? 0 : 1);

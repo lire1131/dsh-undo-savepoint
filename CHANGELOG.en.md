@@ -2,6 +2,56 @@
 
 Notable changes to dsh-undo-savepoint. Dates are in local time (UTC+8). 中文版:[CHANGELOG.md](CHANGELOG.md)
 
+## [0.5.1] - 2026-11-07
+
+### Added
+
+- **Two-dimensional switching across ports and profiles**. Instance entries gain an optional port and a currentProfile; the offline UI picks a port first and then the web or desktop store of that port, while the in-host UI stays on the current port and switches between the two profiles. Store roots resolve by home and profile, reading sharded stores first and falling back to the historical flat store with a shared-library label.
+- **Reworked panel and offline WebUI**. Both sides share an instance (port) to profile to snapshot-store flow bar and a status strip; the diff overlay groups configuration, plugin, and profile-code files, with a left file navigator carrying added and removed line counts and a right side showing line-level red and green, plus collapse, Esc close, and error retry.
+- **One settings file shown in three places with hot reload**. The in-host panel, the plugin detail page, and the offline WebUI show the same settingsFile; switching a store loads that instance's own settings, reading and saving both reload it, and writes keep instances and current.
+- **Scan local instances**. Both sides gain a scan endpoint that lists local DSH ports, processes, detectable profiles, and snapshot counts; it only suggests and never writes configuration, and returns an empty list on timeout or a missing command.
+- **Shared-library filter and three ownership states**. Each snapshot is labelled by the profile recorded in its manifest, with served, other-profile, and unknown states handled separately; the selected profile filters by default, and a show-all-shared toggle shows everything with per-row labels.
+- **Desktop-profile safe mode with explicit confirmation**. The default remains refusal; a request carrying confirmation may write, after taking a pre-safe-mode snapshot and backing up the profile manifest.
+- **Three-mode conversation header**. A new headerMode setting takes auto, full, or compact and defaults to auto; the wide mode shows labels, the medium mode keeps icons only, and the narrow mode folds into undo plus a single-entry menu containing undo, redo, create snapshot, message undo, and snapshot management.
+- **Plugin icon on the Plugins page**. The package manifest gains an icon field, and from DSH 0.2.1 the Plugins page and plugin cards show the same icon as the desktop shortcut.
+- **Desktop shortcut validity self-check**. The shortcut's target, arguments, and working directory are read back and compared with the current installation; a match is skipped and keeps the custom icon, a mismatch is rewritten, and diagnostics report a repairable notice.
+- **Install-time environment self-check**. The `dsh plugin add` hooks check the external Node.js, PowerShell, the platform, and whether the DSH home is writable; a missing external node or one below 20 and an unwritable DSH home are blocking, while a missing PowerShell, a non-Windows platform, and node below 24.9 are advisory, and `DSH_UNDO_SKIP_ENV_CHECK=1` skips the check.
+- **Visible client assembly state**. The five slot registration points record failure labels one by one, `document.documentElement.dataset.undoClient` is set to `ready` or `degraded`, and the console prints one summary line, so a single on-site query separates "apply did not run" from "registration was swallowed" (#54).
+- **Host-internal package check**. A host-internal copy under the profile root `node_modules/@deepseek-ai/` is graded by source and version; packages declared in the manifest, links pointing into the host installation tree, and copies matching the host version are let through, while a version mismatch or an unreadable version is reported as an error with the copy version, host version, and version source in the detail; a mismatched copy in the shared tree `profiles/node_modules` is a warning only and is never renamed (#49).
+- **DSH 0.2.2 line declared**. The last segment of `engines.dsh` gains `>=0.2.2-0`, and both READMEs plus the offline launch notice state the two requirements: the DSH 0.2.2 host needs Node.js 24.9, while the plugin's offline tools need only 20.
+
+### Changed
+
+- **Instance configuration shape and REST contract**. Each instances entry gains an optional port and a new currentProfile; old configurations still read, and a missing port reads by home only without probing ports. The REST contract becomes 22 routes on both sides, 2 in-host only, and 3 offline only; a scan endpoint is added, instance switching becomes `{switch:{instance, profile}}`, and safe-mode gains profile and confirmDesktop.
+- **Shared stores filter by profile by default**. The flat shared store no longer merges web and desktop into one list; manifests from before 0.5.0 carry no schemaVersion and may hold a default profile, so those snapshots are treated as ownership-unknown and no profile view deletes them by mistake.
+- **Desktop-profile safe mode changes from refusal to confirmed use**. The third button of the official recovery dialog remains the preferred escape path; a request without confirmation is still refused before any write.
+- **Node.js wording in the install notice**. The launch script and both READMEs state the host requirement of 24.9 and the offline requirement of 20 as two separate judgements.
+
+### Optimized
+
+- **Panel rendering and status strip**. Above 200 entries the card view mounts only the current batch, and both table and cards render in batches; the shared store appears once in the status strip with the settings-file entry added, while the table keeps its ownership column.
+- **Profile directory detection**. `profiles/node_modules` is no longer treated as a profile; only web, desktop, and directories carrying package.json and `cordis*.yml` count, so the flow bar no longer overlaps the snapshot-store content.
+- **Old snapshot ownership display**. Manifests without schemaVersion show as ownership-unknown and can be inspected through the show-all-shared toggle instead of being misjudged against the default profile.
+
+### Fixed
+
+- **Info-level partial-sanitize findings were moved back by the repair (#55)**. `doctor -Fix` used to check only that a finding existed, so info-level findings also entered the merge branch and top-level entries the user had deleted were written back into the patch. The repair now handles warn-level findings only, and info findings are reported without touching files; before merging, each entry's `name:` is checked against dependencies, dsh.profile.bundles, and node_modules, entries for uninstalled packages are skipped with the package names recorded in the repair detail, and the repair summary prints how many entries were appended.
+- **YAML trailing comments caused false findings and duplicate move-backs (#53)**. The `entryIdOf` line-end anchor rejected `- id: x # comment`, so the partial-sanitize check treated an entry that was already present as missing and the repair moved a duplicate with the same id back, which the host rejects as a duplicate loader entry id. The pattern now accepts a trailing comment introduced by whitespace plus `#`, while complete scalars such as `foo#bar` are unaffected.
+- **Junction false positives in the host-internal package check (#49)**. A failed `realpath` no longer falls straight to shadow; the link text itself is read, and a link whose text lands under a host tree root or the desktop product-tree structure prefix is let through as a host-tree link, with the link state kept in the detail. Real copies with a different version are still reported as errors.
+- **On-site diagnosis of the missing client entries on 0.2.2-rc.1 desktop (#54)**. The five slot registration points record failures one by one, the client state is written to `dataset.undoClient`, and the console prints a summary; the isolated instance reported `client ready (5/5 slots)`, while the desktop shape still needs a check on the maintainer's machine.
+- **Narrow-window overlay clipping (#52)**. The snapshot panel and message-undo overlay now render under body, the mask covers the whole viewport, and the panel centers on the viewport, no longer affected by the host header container's overflow rules; the panel also becomes a bottom drawer and the table scrolls horizontally when too wide.
+- **Offline tools pointed the file-spec table at the wrong root after a profile switch (#51)**. Once settings.profileName takes effect, the snapshot file list is rebuilt against the new root and no longer points profile files at `profiles\web`; when profileName is unset and the machine has exactly one profile containing `cordis.patch.yml`, that profile is selected with a notice.
+- **Conversation header buttons overflowed in narrow columns (#50)**. The narrow headerMode folds four buttons into one entry, and container queries switch modes by actual available width.
+- **The second patch-entry false positive (#47)**. A top-level entry and an `insert` child sharing an id are no longer judged as a duplicate mount entry, at the known cost that two top-level entries with the same id in one file are no longer reported either.
+- **Platform differences exposed by the Node 22 CI matrix**. Host-tree prefix comparison accepts both raw and realpath forms; Windows device prefixes read from readlink are normalized and UNC paths restored; link fixtures use lstat for existence so a dangling link is not followed by fs.access.
+- **Instance and profile switching fixes**. Settings files no longer point at the wrong place after a profile switch; when a port is taken by another instance the configured home is kept and the measured home is reported separately; with no instance configured, the offline WebUI still shows the current home and only hides the dropdown.
+
+### Tests
+
+- **Full gate suite**. Smoke grows to 663 checks, host-api to 36, undo-server to 35, home-resolution to 3 branches, and e2e to 14; check-routes reports 22 routes on both sides, 2 in-host only, and 3 offline only; check-size reports 1655430 bytes; check-client-exports reports 8 exports with GATE_OK.
+- **New regression coverage**. Trailing YAML comments and the repair no longer moving present entries, host-tree link text fallback and the shared-tree scan, info-level findings not writing the patch, uninstalled entries skipped with the repair summary count, client assembly state, install-time environment self-check, the 300-entry panel threshold, and the three header modes.
+- **CI matrix**. The CI matrix covers Windows, Ubuntu, and macOS times Node 20 and 22, and the path and link differences exposed on Node 22 are pinned as regression assertions.
+
 ## [0.5.0] - 2026-10-20
 
 ### Added

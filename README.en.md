@@ -133,8 +133,8 @@ If your DSH version falls outside the declared range, startup reports it as inco
 
 ```bat
 dsh plugin --profile web version-exemptions
-dsh plugin --profile web allow-version dsh-undo-savepoint@0.5.0 --dsh-version <runtime> --accept-risk
-dsh plugin --profile web revoke-version dsh-undo-savepoint@0.5.0 --dsh-version <runtime>
+dsh plugin --profile web allow-version dsh-undo-savepoint@0.5.1 --dsh-version <runtime> --accept-risk
+dsh plugin --profile web revoke-version dsh-undo-savepoint@0.5.1 --dsh-version <runtime>
 ```
 
 The first lists existing grants, the second submits one, the third revokes it. An exemption only authorises loading, never dependency scripts, and neither a plugin upgrade nor a DSH upgrade inherits a grant, so each of them needs a fresh confirmation. The declared range is not pinned to the newest release because DSH can still ship breaking changes; the range expands once a new version has been tested here.
