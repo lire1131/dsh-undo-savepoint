@@ -4014,6 +4014,10 @@ console.log('== W89. #49 host-tree links exempt when realpath fails ==');
   if (!r89.json) console.error(`W89: child probe produced no JSON (code ${r89.code}): ${r89.stderr.slice(0, 800)}`);
   const k89 = (n) => j89.kinds?.[n] ?? {};
   const hit89 = (n) => (j89.hits ?? []).filter((h) => String(h.name ?? '').includes(n));
+  if (!r89.json || k89('dangling-under').kind !== 'host-link' || k89('dangling-under').linkState !== 'unresolved'
+      || k89('dangling-out').kind !== 'shadow' || (j89.hits ?? []).length !== 1) {
+    console.error('W89 debug:', JSON.stringify(j89).slice(0, 2500));
+  }
   check(k89('dangling-under').kind === 'host-link' && k89('dangling-under').linkState === 'unresolved'
       && hit89('dangling-under').length === 0,
     'W89: 目标不可解析但链接文本落在宿主树内的 junction 判 host-link 且不报错');
