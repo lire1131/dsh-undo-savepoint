@@ -13,11 +13,11 @@ It checks proactively and speaks only when something is wrong. A DSH version cha
 
 | Offline WebUI: port → Profile → snapshot store, with per-row Compare / Restore / Note / Delete |
 |---|
-| ![webui](https://cdn.jsdelivr.net/gh/lire1131/dsh-undo-savepoint@v0.5.1/docs/shots/webui-main.en.png) |
+| ![webui](https://cdn.jsdelivr.net/gh/lire1131/dsh-undo-savepoint@master/docs/shots/webui-main.en.png) |
 
 | Snapshot diff: file navigation with add/remove counts, red/green lines | Settings: instances, snapshot policy, auto-cleanup and retention |
 |---|---|
-| ![diff](https://cdn.jsdelivr.net/gh/lire1131/dsh-undo-savepoint@v0.5.1/docs/shots/webui-diff.en.png) | ![settings](https://cdn.jsdelivr.net/gh/lire1131/dsh-undo-savepoint@v0.5.1/docs/shots/webui-settings.en.png) |
+| ![diff](https://cdn.jsdelivr.net/gh/lire1131/dsh-undo-savepoint@master/docs/shots/webui-diff.en.png) | ![settings](https://cdn.jsdelivr.net/gh/lire1131/dsh-undo-savepoint@master/docs/shots/webui-settings.en.png) |
 
 ## Core capabilities
 
@@ -49,27 +49,27 @@ Prerequisites: DSH (`@deepseek-ai/dsh`) and Node.js. DSH 0.2.2 and newer require
 
 The desktop build is the main path and runs the `desktop profile`. Launch the desktop client once so the profile initialises, then quit it **completely** before installing.
 
-GitHub direct.
+GitHub direct. This installs the latest commit on the default branch; append `#vX.Y.Z` to pin a version.
 
 ```bat
-dsh plugin --profile desktop add github:lire1131/dsh-undo-savepoint#v0.5.1
+dsh plugin --profile desktop add github:lire1131/dsh-undo-savepoint
 ```
 
-npm registry.
+npm registry. This installs npm's latest; append `@X.Y.Z` to pin a version.
 
 ```bat
-dsh plugin --profile desktop add dsh-undo-savepoint@0.5.1
+dsh plugin --profile desktop add dsh-undo-savepoint
 ```
 
 Restart DSH after installing. When DSH from 0.2.0-rc.2 on the desktop hits a fatal error, the official recovery dialog's third button drops third-party bundle entries and backs the patch up to `cordis.patch.yml.bak-<timestamp>`, keeping the package. No reinstall is needed after that, only restoring the mount declaration. Safe mode is refused by default on the desktop build; a request carrying `confirmDesktop` takes a pre-safe-mode snapshot before writing, and the third button of the official dialog remains the preferred escape path.
 
 ### Web profile installation
 
-Swap the profile to `web`.
+Swap the profile to `web`. Append a tag or version as above to pin a version.
 
 ```bat
-dsh plugin --profile web add github:lire1131/dsh-undo-savepoint#v0.5.1
-dsh plugin --profile web add dsh-undo-savepoint@0.5.1
+dsh plugin --profile web add github:lire1131/dsh-undo-savepoint
+dsh plugin --profile web add dsh-undo-savepoint
 ```
 
 ### Install-time environment check
@@ -103,7 +103,7 @@ The local page carries the timeline, rollback, diff, diagnostics and SAFE MODE. 
 DSH 0.2.2 and newer require Node.js 24.9 on the host; the plugin's offline tools still need only 20, and the two are judged separately. If your DSH version falls outside the declared range, do not edit `package.json`; use the official version exemption.
 
 ```bat
-dsh plugin --profile web allow-version dsh-undo-savepoint@0.5.1 --dsh-version <runtime> --accept-risk
+dsh plugin --profile web allow-version dsh-undo-savepoint@<plugin-version> --dsh-version <runtime> --accept-risk
 ```
 
 ## Uninstall

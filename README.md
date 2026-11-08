@@ -13,11 +13,11 @@
 
 | 局外 WebUI：端口 → Profile → 快照库，逐条对比 / 恢复 / 备注 / 删除 |
 |---|
-| ![webui](https://cdn.jsdelivr.net/gh/lire1131/dsh-undo-savepoint@v0.5.1/docs/shots/webui-main.png) |
+| ![webui](https://cdn.jsdelivr.net/gh/lire1131/dsh-undo-savepoint@master/docs/shots/webui-main.png) |
 
 | 快照对比：左栏文件导航带增删行数，右栏逐行红绿 | 设置：实例管理、快照策略、自动清理与保留数量 |
 |---|---|
-| ![diff](https://cdn.jsdelivr.net/gh/lire1131/dsh-undo-savepoint@v0.5.1/docs/shots/webui-diff.png) | ![settings](https://cdn.jsdelivr.net/gh/lire1131/dsh-undo-savepoint@v0.5.1/docs/shots/webui-settings.png) |
+| ![diff](https://cdn.jsdelivr.net/gh/lire1131/dsh-undo-savepoint@master/docs/shots/webui-diff.png) | ![settings](https://cdn.jsdelivr.net/gh/lire1131/dsh-undo-savepoint@master/docs/shots/webui-settings.png) |
 
 ## 核心能力
 
@@ -49,27 +49,27 @@
 
 桌面端是主要使用场景，走 `desktop profile`。先启动一次桌面端完成初始化，再**完全退出**桌面客户端后执行安装。
 
-GitHub 直装。
+GitHub 直装。默认装默认分支的最新提交，需要固定版本时在末尾加 `#vX.Y.Z`。
 
 ```bat
-dsh plugin --profile desktop add github:lire1131/dsh-undo-savepoint#v0.5.1
+dsh plugin --profile desktop add github:lire1131/dsh-undo-savepoint
 ```
 
-npm 源安装。
+npm 源安装。默认装 npm 上的 latest，需要固定版本时在包名后加 `@X.Y.Z`。
 
 ```bat
-dsh plugin --profile desktop add dsh-undo-savepoint@0.5.1
+dsh plugin --profile desktop add dsh-undo-savepoint
 ```
 
 安装完成后重启 DSH 即生效。DSH 0.2.0-rc.2 起的桌面版遇到致命错误会弹官方恢复窗，第三个按钮会摘掉第三方插件的 bundles 条目，并把补丁备份为 `cordis.patch.yml.bak-<时间戳>`，包本体保留。被禁用后不需要重装，恢复挂载声明即可。桌面形态下 safe-mode 默认拒绝执行，带 `confirmDesktop` 的显式确认会先落前置快照再写文件；官方恢复窗第三个按钮仍是首选逃生路径。
 
 ### Web profile 安装
 
-把 profile 换成 `web`。
+把 profile 换成 `web`。需要固定版本时按上面的方式自行加 tag 或版本号。
 
 ```bat
-dsh plugin --profile web add github:lire1131/dsh-undo-savepoint#v0.5.1
-dsh plugin --profile web add dsh-undo-savepoint@0.5.1
+dsh plugin --profile web add github:lire1131/dsh-undo-savepoint
+dsh plugin --profile web add dsh-undo-savepoint
 ```
 
 ### 安装期环境自检
@@ -103,7 +103,7 @@ node tools/undo-server.mjs
 DSH 0.2.2 起宿主要求 Node.js 24.9，本插件离线工具仍只要求 20，两者分开判定。版本不在声明范围内时，不要改 `package.json`，用官方的版本豁免。
 
 ```bat
-dsh plugin --profile web allow-version dsh-undo-savepoint@0.5.1 --dsh-version <运行时版本> --accept-risk
+dsh plugin --profile web allow-version dsh-undo-savepoint@<插件版本> --dsh-version <运行时版本> --accept-risk
 ```
 
 ## 卸载
