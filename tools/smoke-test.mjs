@@ -4947,5 +4947,182 @@ console.log('== W73/W74/W76/W77/W78. client surface (portal / header modes / dra
   }
 }
 
+// ── W93 / W94 / W95：客户端行为级回归（issue #56 徽章与命名 / #54 浮层 portal）──────
+// 上一段是源码级断言，抓不住「把 React 元素拼进字符串」这类只在渲染期才暴露的问题。
+// 这一段按 loader 契约在内存里真执行 client.js，直接调用组件函数拿元素树，再断言渲染结果。
+// 反过来也做负向对照：把旧写法改回去，同一套断言必须变红。
+console.log('== W93/W94/W95. client behavior (badge children / naming / portal target) ==');
+{
+  const repoDir95 = fileURLToPath(new URL('..', import.meta.url));
+  const cliSrc95 = await readFile(join(repoDir95, 'lib', 'client.js'), 'utf8');
+  const T95 = (k, v) => (v && v.n !== undefined ? k + ':{n=' + v.n + '}' : k);
+
+  /** loader + 浏览器侧最小桩。用 seed 指定「第 N 次 useState」的初始值，模拟有数据的界面。 */
+  function makeHarness95(source, opts) {
+    const o = opts || {};
+    const bodyStub = { tag: 'body' };
+    const documentStub = {
+      querySelector: () => null,
+      createElement: () => ({ dataset: {}, style: {}, textContent: '' }),
+      head: { appendChild() {} },
+      body: bodyStub,
+      documentElement: { dataset: {} },
+      addEventListener() {}, removeEventListener() {},
+    };
+    const windowStub = {
+      __ModuleLoader__: { load: (c) => { windowStub.__cfg = c; } },
+      addEventListener() {}, removeEventListener() {}, dispatchEvent() {},
+      confirm: () => true, alert() {},
+    };
+    const localStorageStub = { getItem: () => null, setItem() {}, removeItem() {} };
+    let hookIndex = 0;
+    const seed = o.seed || {};
+    const reactStub = {
+      useState: (init) => {
+        hookIndex += 1;
+        const i = hookIndex;
+        const seeded = Object.prototype.hasOwnProperty.call(seed, i)
+          ? seed[i]
+          : (typeof init === 'function' ? init() : init);
+        return [seeded, () => {}];
+      },
+      useEffect: () => {},
+      useMemo: (f) => (typeof f === 'function' ? f() : f),
+      useCallback: (f) => f,
+      useRef: (v) => ({ current: v }),
+      createElement: (type, props, ...children) => ({ type, props: props || {}, children }),
+      Fragment: { tag: 'fragment' },
+    };
+    reactStub.default = reactStub;
+    const jsx = (type, props) => ({ type, props: props || {} });
+    const requireStub = (id) => {
+      if (id === 'react') return reactStub;
+      if (id === 'react/jsx-runtime') return { jsx, jsxs: jsx, Fragment: reactStub.Fragment };
+      if (id === 'react-dom') {
+        if (o.noReactDom) throw new Error('react-dom unavailable');
+        return { createPortal: (node, container) => ({ __portal: true, container, node }) };
+      }
+      throw new Error('client behavior harness has no stub for module: ' + id);
+    };
+    // eslint-disable-next-line no-new-func
+    new Function('window', 'document', 'localStorage', source)(windowStub, documentStub, localStorageStub);
+    const cfg = windowStub.__cfg;
+    if (!cfg || typeof cfg.factory !== 'function') throw new Error('loader did not receive a factory');
+    const api = cfg.factory(requireStub);
+    return { api, bodyStub, resetHooks: () => { hookIndex = 0; } };
+  }
+
+  /** 元素树里的字符串节点（portal 节点取被 portal 的那棵子树）。 */
+  function flatStrings95(node, out) {
+    const acc = out || [];
+    if (node === null || node === undefined || node === false || node === true) return acc;
+    if (typeof node === 'string') { acc.push(node); return acc; }
+    if (Array.isArray(node)) { for (const x of node) flatStrings95(x, acc); return acc; }
+    if (typeof node === 'object') {
+      if (node.__portal) return flatStrings95(node.node, acc);
+      if (node.props && node.props.children !== undefined) return flatStrings95(node.props.children, acc);
+    }
+    return acc;
+  }
+
+  /** 元素树里的元素节点（含函数组件节点的 type 与 props）。 */
+  function walkEls95(node, out) {
+    const acc = out || [];
+    if (!node || typeof node !== 'object') return acc;
+    if (Array.isArray(node)) { for (const x of node) walkEls95(x, acc); return acc; }
+    if (node.__portal) return walkEls95(node.node, acc);
+    acc.push(node);
+    if (node.props && node.props.children !== undefined) walkEls95(node.props.children, acc);
+    return acc;
+  }
+
+  const byClass95 = (root, cls) => walkEls95(root).find((e) => typeof e.props.className === 'string' && e.props.className.split(/\s+/).includes(cls));
+
+  // UndoHeader 的 useState 调用序：1 busy / 2 msg / 3 msgOk / 4 msgOpen / 5 headerMode / 6 menuOpen / 7 stat
+  const SEED95 = { 4: true, 7: { total: 28, latest: '2026-11-17T12:00:00.000Z' } };
+
+  const h95 = makeHarness95(cliSrc95, { seed: SEED95 });
+  const header95 = h95.api.UndoHeader({ t: T95, onOpenPanel: () => {} });
+  const badge95 = byClass95(header95, 'u_badge');
+  const badgeStrings95 = flatStrings95(badge95);
+  check(!!badge95, 'W93: stat 非空时徽章渲染（28 份快照 + 最新时间）');
+  check(badgeStrings95.length > 0 && !badgeStrings95.some((s) => s.includes('[object Object]')),
+    'W93: 徽章文本不含 [object Object]（实际渲染值 ' + JSON.stringify(badgeStrings95) + '）');
+  const timeSpan95 = byClass95(header95, 'u_badgeTime');
+  check(!!badge95 && Array.isArray(badge95.props.children) && badgeStrings95.includes(' · ') && !!timeSpan95,
+    'W93: 分隔符与相对时间 span 是并列 children，时间走 u_badgeTime');
+
+  // 负向对照：把徽章改回字符串拼接，同一套断言必须能抓到 [object Object]。
+  const FIXED95 = '...(stat.latest ? [" · ", (0, react_jsx_runtime.jsx)("span", { className: styles.badgeTime, children: relativeTime(stat.latest, t) || "" })] : [])';
+  const BUGGY95 = 'stat.latest ? " · " + (0, react_jsx_runtime.jsx)("span", { className: styles.badgeTime, children: relativeTime(stat.latest, t) || "" }) : ""';
+  const buggySrc95 = cliSrc95.split(FIXED95).join(BUGGY95);
+  check(cliSrc95.includes(FIXED95) && !buggySrc95.includes(FIXED95) && buggySrc95.includes(BUGGY95),
+    'W93 负向对照：把徽章改回字符串拼接的锚点可用');
+  const hBuggy95 = makeHarness95(buggySrc95, { seed: SEED95 });
+  const badgeBuggy95 = byClass95(hBuggy95.api.UndoHeader({ t: T95, onOpenPanel: () => {} }), 'u_badge');
+  check(flatStrings95(badgeBuggy95).some((s) => s.includes('[object Object]')),
+    'W93 负向对照：旧拼接确实产出 [object Object]，上面的断言能抓到这个回归');
+
+  // W94：命名与说明。旧名指向「撤回消息」，实际只回退文件，名称必须反映行为。
+  const zh94 = JSON.parse(await readFile(join(repoDir95, 'lib', 'i18n', 'zh.json'), 'utf8'));
+  const en94 = JSON.parse(await readFile(join(repoDir95, 'lib', 'i18n', 'en.json'), 'utf8'));
+  check(zh94['msg'] === '文件回退' && zh94['msg.title'] === '文件回退'
+    && zh94['msg.aria'].includes('不删除聊天记录') && zh94['msg.note'].includes('不删除聊天记录'),
+    'W94: zh 命名改为文件回退，aria 与面板说明写明不删除聊天记录');
+  check(en94['msg'] === 'File rollback' && en94['msg.title'] === 'File rollback'
+    && en94['msg.aria'].includes('chat history is kept') && en94['msg.note'].includes('chat history is kept'),
+    'W94: en 命名改为 File rollback，aria 与面板说明写明聊天记录保留');
+  const zhFlat94 = JSON.stringify(zh94);
+  check(!cliSrc95.includes('对话撤回') && !cliSrc95.includes('对话级撤回')
+    && !zhFlat94.includes('对话撤回') && !zhFlat94.includes('对话级撤回'),
+    'W94: 旧名「对话撤回」「对话级撤回」在客户端与 zh 词典零残留');
+  const MSG94 = ['msg', 'msg.aria', 'msg.title', 'msg.note', 'msg.empty', 'msg.op.undo', 'msg.op.undoClick', 'msg.ok', 'msg.err'];
+  const parity94 = MSG94.every((k) => typeof zh94[k] === 'string' && typeof en94[k] === 'string'
+    && cliSrc95.includes(JSON.stringify(k) + ': ' + JSON.stringify(zh94[k]) + ',')
+    && cliSrc95.includes(JSON.stringify(k) + ': ' + JSON.stringify(en94[k]) + ','));
+  check(parity94, 'W94: client.js 内联 zh/en 词典与 lib/i18n 词典取值逐条一致（命名键无漂移）');
+
+  // W95（#54）：浮层必须真的挂到 body。这里验的是行为，不是源码里有没有写 createPortal。
+  const msgEl95 = walkEls95(header95).find((e) => typeof e.type === 'function' && e.type.name === 'MessagePanel');
+  let msgPortal95 = null;
+  if (msgEl95) {
+    h95.resetHooks();
+    const wrap95 = msgEl95.type(msgEl95.props);
+    msgPortal95 = wrap95.type(wrap95.props);
+  }
+  check(!!msgPortal95 && msgPortal95.__portal === true && msgPortal95.container === h95.bodyStub
+    && typeof msgPortal95.node.props.className === 'string' && msgPortal95.node.props.className.includes('u_overlay'),
+    'W95: 文件回退面板经 UndoLayer createPortal 到 document.body（执行级，非源码文本）');
+  check(!!msgPortal95 && walkEls95(msgPortal95.node).some((e) => e.props && e.props.children === 'msg.note'),
+    'W94: 文件回退面板渲染说明行（不删除聊天记录的提示在面板里可见）');
+
+  let snapPortal95 = null;
+  let snapErr95 = null;
+  try {
+    h95.resetHooks();
+    const sp95 = h95.api.SnapshotPanel({ t: T95, onClose: () => {} });
+    snapPortal95 = sp95.type(sp95.props);
+  } catch (e) {
+    snapErr95 = String((e && e.message) || e);
+  }
+  check(!!snapPortal95 && snapPortal95.__portal === true && snapPortal95.container === h95.bodyStub
+    && snapPortal95.node.props['data-undo-panel'] === true,
+    'W95: 快照面板同样 portal 到 document.body' + (snapErr95 ? '（渲染抛错：' + snapErr95 + '）' : ''));
+
+  // 负向对照：react-dom 取不到时 UndoLayer 退回原位渲染，不产生 portal、也不抛错。
+  const hNoDom95 = makeHarness95(cliSrc95, { seed: SEED95, noReactDom: true });
+  const msgElNoDom95 = walkEls95(hNoDom95.api.UndoHeader({ t: T95, onOpenPanel: () => {} }))
+    .find((e) => typeof e.type === 'function' && e.type.name === 'MessagePanel');
+  let innerNoDom95 = null;
+  if (msgElNoDom95) {
+    hNoDom95.resetHooks();
+    const wrapNoDom95 = msgElNoDom95.type(msgElNoDom95.props);
+    innerNoDom95 = wrapNoDom95.type(wrapNoDom95.props);
+  }
+  check(!!innerNoDom95 && !innerNoDom95.__portal
+    && typeof innerNoDom95.props.className === 'string' && innerNoDom95.props.className.includes('u_overlay'),
+    'W95 负向对照：react-dom 缺失时退回原位渲染且不抛错（说明 portal 确实由 UndoLayer 产生）');
+}
+
 console.log(`\n== RESULT: ${pass} passed, ${fail} failed ==`);
 process.exit(fail > 0 ? 1 : 0);
