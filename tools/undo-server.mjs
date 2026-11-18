@@ -474,6 +474,14 @@ const server = createServer(async (req, res) => {
         if (body.sensitiveMode === 'redact' || body.sensitiveMode === 'keep') cfg.sensitiveMode = body.sensitiveMode;
         // W73（#50）：对话头按钮档位（auto / full / compact），非法值不写入。
         if (body.headerMode === 'auto' || body.headerMode === 'full' || body.headerMode === 'compact') cfg.headerMode = body.headerMode;
+        // canary.2（#57）：对话头控件逐项显隐，非法值不写入。白名单与局内同源，此处内联以保持双端加载顺序。
+        if (Array.isArray(body.headerButtons)) {
+          const hbAllowed = ['undo', 'redo', 'snapshot', 'message', 'badge', 'menu'];
+          const hbKeep = new Set(body.headerButtons.filter((x) => hbAllowed.includes(x)));
+          // 空数组是明确选择（一项都不显示）；非空但全部未知按非法值处理，保持原值不写。
+          if (body.headerButtons.length === 0) cfg.headerButtons = [];
+          else if (hbKeep.size > 0) cfg.headerButtons = hbAllowed.filter((k) => hbKeep.has(k));
+        }
         if (typeof body.createDesktopShortcut === 'boolean') {
           cfg.createDesktopShortcut = body.createDesktopShortcut;
           if (body.createDesktopShortcut) void ensureDesktopShortcut(cfg).catch(() => { /* 尽力而为 */ });

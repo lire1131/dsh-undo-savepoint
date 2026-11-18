@@ -4910,10 +4910,13 @@ console.log('== W73/W74/W76/W77/W78. client surface (portal / header modes / dra
   const repoPrefix = repoDir.endsWith('\\') || repoDir.endsWith('/') ? repoDir : repoDir + '\\';
 
   // W77（#52）：两个浮层都被 UndoLayer 包住；react-dom 取不到时降级，不让客户端半体起不来。
+  // W97 起快照面板支持整页模式，UndoLayer 包裹移到 return 处（整页绕过、浮层照旧），
+  // 消息面板仍是直接包裹。断言按两种结构分别匹配，判据不变：两个浮层都必须经过 UndoLayer。
   const wrapped = (marker) => new RegExp(String.raw`\(0, react_jsx_runtime\.jsx\)\(UndoLayer, \{ children: \(0, react_jsx_runtime\.jsx\)\("div", \{\s*className: styles\.overlay,\s*"${marker}": true,`).test(cliText);
+  const snapshotWrapped = /return asPage \? panelNode : \(0, react_jsx_runtime\.jsx\)\(UndoLayer, \{ children: panelNode \}\);/.test(cliText);
   check(cliText.includes('createPortal') && cliText.includes('function UndoLayer(')
     && cliText.includes('try { reactDom = require("react-dom"); } catch (e) { reactDom = null; }')
-    && wrapped('data-undo-msg-panel') && wrapped('data-undo-panel'),
+    && wrapped('data-undo-msg-panel') && snapshotWrapped,
     'W77: 两个浮层都走 UndoLayer（createPortal 到 body），react-dom 缺失时降级不抛错');
 
   // W78（#52）：底部抽屉、视口上限、横向滚动、减少动效。
@@ -5039,7 +5042,8 @@ console.log('== W93/W94/W95. client behavior (badge children / naming / portal t
   const byClass95 = (root, cls) => walkEls95(root).find((e) => typeof e.props.className === 'string' && e.props.className.split(/\s+/).includes(cls));
 
   // UndoHeader 的 useState 调用序：1 busy / 2 msg / 3 msgOk / 4 msgOpen / 5 headerMode / 6 menuOpen / 7 stat
-  const SEED95 = { 4: true, 7: { total: 28, latest: '2026-11-17T12:00:00.000Z' } };
+  // 第 5 个 useState 是头部控件配置：这些用例要覆盖徽章与全部控件，显式打开六项。
+  const SEED95 = { 4: true, 5: { mode: 'auto', buttons: ['undo', 'redo', 'snapshot', 'message', 'badge', 'menu'] }, 7: { total: 28, latest: '2026-11-17T12:00:00.000Z' } };
 
   const h95 = makeHarness95(cliSrc95, { seed: SEED95 });
   const header95 = h95.api.UndoHeader({ t: T95, onOpenPanel: () => {} });
@@ -5122,6 +5126,176 @@ console.log('== W93/W94/W95. client behavior (badge children / naming / portal t
   check(!!innerNoDom95 && !innerNoDom95.__portal
     && typeof innerNoDom95.props.className === 'string' && innerNoDom95.props.className.includes('u_overlay'),
     'W95 负向对照：react-dom 缺失时退回原位渲染且不抛错（说明 portal 确实由 UndoLayer 产生）');
+
+  // ── W96（#57 第 1 项）：对话头控件逐项显隐 ──────────────────────────────────
+  const baseW96 = await import('../lib/base.mjs');
+  const coreW96 = await import('../lib/core.mjs');
+  const ALLW96 = ['undo', 'redo', 'snapshot', 'message', 'badge', 'menu'];
+  // 维护者 2026-11-18 定：默认只留关键控件，文件回退与徽章交给用户自己勾。
+  const DEFAULT96 = ['undo', 'redo', 'snapshot', 'menu'];
+
+  check(Array.isArray(baseW96.DEFAULT_SETTINGS.headerButtons)
+    && baseW96.DEFAULT_SETTINGS.headerButtons.join(',') === DEFAULT96.join(','),
+    'W96: 默认只放撤销、重做、创建快照与单入口菜单，其余默认不占位');
+  check(baseW96.normalizeHeaderButtons(['badge', 'undo', 'undo', 'zzz']).join(',') === 'undo,badge',
+    'W96: 白名单读取过滤未知值、去重并按固定顺序归一');
+  check(baseW96.normalizeHeaderButtons('undo') === undefined && baseW96.normalizeHeaderButtons(null) === undefined,
+    'W96: 非数组读取回落 undefined，让调用链走默认值');
+  check(Array.isArray(baseW96.normalizeHeaderButtons([])) && baseW96.normalizeHeaderButtons([]).length === 0,
+    'W96: 显式空数组保留为空，表示一项都不显示');
+  {
+    const cfgW96 = { ...baseW96.DEFAULT_SETTINGS };
+    baseW96.applySettingsToCfg(cfgW96, { headerButtons: ['nope'] });
+    const badFallback = cfgW96.headerButtons.join(',') === DEFAULT96.join(',');
+    cfgW96.headerButtons = ['undo'];
+    baseW96.applySettingsToCfg(cfgW96, { keepAuto: 7 });
+    check(badFallback && cfgW96.headerButtons.join(',') === 'undo',
+      'W96: 非法值回落默认值，键缺失时保持现值不覆盖');
+  }
+  check((coreW96.publicSettings({ ...baseW96.DEFAULT_SETTINGS, headerButtons: undefined }).headerButtons || []).join(',') === DEFAULT96.join(','),
+    'W96: settings 投影缺省时给同一套默认值');
+
+  /** 用给定白名单渲染一次 UndoHeader，返回控件标签序列。 */
+  const w96Labels = (seed) => {
+    const h = makeHarness95(cliSrc95, { seed });
+    const els = walkEls95(h.api.UndoHeader({ t: T95, onOpenPanel: () => {} }));
+    return els.filter((e) => e.type === 'button').map((e) => {
+      const p = e.props || {};
+      const cls = typeof p.className === 'string' ? p.className : '';
+      if (cls.includes('u_menuBtn')) return 'menu';
+      if (cls.includes('u_badge')) return 'badge';
+      if (cls.includes('u_undo')) return 'undo';
+      if (cls.includes('u_redo')) return 'redo';
+      if (cls.includes('u_list')) return String(p.title || '').indexOf('snapshots') >= 0 ? 'snapshot' : 'message';
+      return '?';
+    });
+  };
+  const allOn = w96Labels({ 5: { mode: 'auto', buttons: ALLW96 }, 7: { total: 3, latest: '2026-11-17T12:00:00Z' } });
+  check(allOn.join(',') === 'undo,redo,snapshot,message,badge,menu',
+    'W96: 默认全开时六个控件都渲染（实得 ' + allOn.join(',') + '）');
+  const onlyUndoMenu = w96Labels({ 5: { mode: 'auto', buttons: ['undo', 'menu'] } });
+  check(onlyUndoMenu.join(',') === 'undo,menu',
+    'W96: 只留撤销与菜单时其余控件不渲染（实得 ' + onlyUndoMenu.join(',') + '）');
+  const allOff = w96Labels({ 5: { mode: 'auto', buttons: [] } });
+  check(allOff.join(',') === 'menu',
+    'W96: 六项全关时仍保留单入口菜单，避免把自己锁在外面（实得 ' + allOff.join(',') + '）');
+  const noMenu = w96Labels({ 5: { mode: 'auto', buttons: ['undo', 'redo'] } });
+  check(noMenu.join(',') === 'undo,redo',
+    'W96: 关掉菜单且仍有动作时不渲染菜单（实得 ' + noMenu.join(',') + '）');
+
+  // ── W99：图标语言与键盘焦点（设计一致性） ───────────────────────────────────
+  const ICONS_W99 = ['WarningIcon', 'ClockIcon', 'SearchIcon', 'FolderIcon', 'GlobeIcon'];
+  check(ICONS_W99.every((n) => cliSrc95.includes('function ' + n + '(')),
+    'W99: 警示/时钟/搜索/目录/连接五个图标组件就位');
+  const bannedW99 = ['⚠', '⏳', '🌐', '🔍', '🗂', '📁', '📂', '✖'];
+  const leftW99 = bannedW99.filter((ch) => cliSrc95.includes('children: "' + ch));
+  check(leftW99.length === 0,
+    'W99: 图形 emoji 不再当 children 直接用（残留 ' + (leftW99.join('') || 'none') + '）');
+  check((cliSrc95.match(/"aria-hidden": "true"/g) || []).length >= 5,
+    'W99: 图标节点统一 aria-hidden，避免读屏把图标当文字念');
+  check(/\.u_btn:focus-visible[^{]*\{[^}]*outline:2px solid var\(--dsw-alias-state-business-primary\)/.test(cliSrc95),
+    'W99: 补了 :focus-visible 焦点环，颜色用白名单内的强调色 token');
+  check((cliSrc95.match(/\)\(WarningIcon, \{ size:/g) || []).length >= 5,
+    'W99: 警示位改成图标加文字（状态位 2 处、徽标 3 处）');
+
+  // ── W97（#57 第 2 项）：快照管理整页 ────────────────────────────────────────
+  h95.resetHooks();
+  const pageEl97 = h95.api.SnapshotPanel({ t: T95, asPage: true, onClose: () => {} });
+  check(!pageEl97.__portal && String(pageEl97.props.className).indexOf('u_overlayPage') >= 0
+    && pageEl97.props['data-undo-page'] === true,
+    'W97: 整页模式不走 portal、不套遮罩，带 data-undo-page 标记');
+  check(String(pageEl97.props.children.props.className).indexOf('u_panelPage') >= 0,
+    'W97: 整页模式下内层面板带 u_panelPage，撑满内容区');
+  check(/\.u_overlayPage\{[^}]*position:static/.test(cliSrc95)
+    && /\.u_overlayPage \.u_panelPage\{[^}]*max-height:none/.test(cliSrc95),
+    'W97: 整页样式为静态定位、去遮罩、去掉视口高度上限');
+  {
+    const regs97 = [];
+    const ctx97 = {
+      slots: { inject: (n, cb) => { cb(); return () => {}; }, register: (spec) => { regs97.push(spec); return () => {}; } },
+      locale: { register: () => () => {}, bind: () => T95 },
+      effect: (fn) => { const d = fn(); return typeof d === 'function' ? d : () => {}; },
+      logger: { info: () => {}, warn: () => {}, error: () => {}, debug: () => {} },
+    };
+    h95.api.apply(ctx97);
+    const pl97 = regs97.find((r) => r.name === 'sidebar.panellist');
+    const mn97 = regs97.find((r) => r.name === 'main');
+    check(!!pl97 && !!mn97 && pl97.id === mn97.key && typeof pl97.id === 'string' && pl97.id !== '',
+      'W97: 侧边栏图标与中央页面注册同一个 key（' + (pl97 && pl97.id) + '）');
+  }
+  // 维护者真机反馈后的修正：整页要能滚、侧边栏图标按宿主给的尺寸画。
+  check(/\.u_overlayPage\{[^}]*overflow:auto/.test(cliSrc95)
+    && /\.u_overlayPage\{[^}]*max-height:calc\(100vh - 48px\)/.test(cliSrc95)
+    && /\.u_overlayPage \.u_tbody\{[^}]*overflow:visible/.test(cliSrc95),
+    'W97: 整页模式给视口高度上限并可滚动，表格不再二次滚动');
+  check(cliSrc95.includes('(props) => (0, react_jsx_runtime.jsx)(CameraIcon, { size: (props && props.size) || 18 })'),
+    'W97: 侧边栏图标用宿主传入的 size，不写死像素');
+  check(cliSrc95.includes('function MoreIcon(') && cliSrc95.includes('function HistoryIcon(')
+    && /children: \(0, react_jsx_runtime\.jsx\)\(MoreIcon, \{ size: 14 \}\)/.test(cliSrc95)
+    && /\(0, react_jsx_runtime\.jsx\)\(HistoryIcon, \{ size: 13 \}\)/.test(cliSrc95),
+    'W99: 单入口菜单与文件回退按钮改用 SVG 图标，头部不再有文字符号顶替图标');
+  // 设置页重排：关键词是「可换行、可收缩、不横向溢出」。
+  check(/\.u_settingsPage \.u_pair\{[^}]*flex-wrap:wrap/.test(cliSrc95)
+    && /\.u_settingsPage \.u_pair\{[^}]*white-space:normal/.test(cliSrc95)
+    && /\.u_settingsPage \.u_keyInput[^{]*\{[^}]*min-width:0/.test(cliSrc95),
+    'W96: 设置页行容器可换行，输入框可收缩，不再靠 nowrap 撑宽');
+  check(cliSrc95.includes('className: styles.settingsPage')
+    && /"data-undo-settings-page": true,/.test(cliSrc95),
+    'W96: 设置页根节点改用统一类名，不再用内联样式定宽');
+  {
+    const zhS = JSON.parse(await readFile(join(repoDir95, 'lib', 'i18n', 'zh.json'), 'utf8'));
+    const groups = ['settings.group.state', 'settings.group.save', 'settings.group.storage', 'settings.group.dirs'];
+    check(groups.every((k) => typeof zhS[k] === 'string' && zhS[k] !== '')
+      && groups.every((k) => cliSrc95.includes('t("' + k + '")')),
+      'W96: 设置页四个分组标题齐备，中英词典同键');
+  }
+  check(/advOpen && \(0, react_jsx_runtime\.jsx\)\("div", \{ className: styles\.pair/.test(cliSrc95)
+    && cliSrc95.includes('"aria-expanded": advOpen ? "true" : "false"')
+    && cliSrc95.includes('t("settings.headerButtons.advanced")')
+    && cliSrc95.includes('const [advOpen, setAdvOpen] = (0, react.useState)(false)'),
+    'W96: 六项开关收在「高级」折叠里，默认收起，展开按钮带 aria-expanded');
+
+  // ── W98（#57 第 3 项）：离线启动器复用 DSH 自带 Node ────────────────────────
+  {
+    const LAUNCHERS98 = ['tools/launch-undo.bat', 'tools/launch-dsh-guard.bat', 'tools/launch-undo.sh',
+      'tools/launch-dsh-guard.sh', 'tools/launch-undo.command', 'tools/launch-dsh-guard.command'];
+    const texts98 = [];
+    for (const rel of LAUNCHERS98) texts98.push(await readFile(join(repoDir95, rel), 'utf8'));
+    const noHardcode98 = texts98.every((s) => !/C:\\Users|D:\\dsh-desk|Program Files\\DeepSeek/.test(s));
+    const order98 = texts98.every((s) => s.includes('DSH_UNDO_NODE') && s.includes('dsh-root.txt')
+      && (s.includes('where node') || s.includes('command -v node')));
+    check(noHardcode98 && order98,
+      'W98: 六个启动器都按「显式覆盖 / 安装根记录 / PATH」三步解析，且不含写死用户路径');
+
+    if (process.platform === 'win32') {
+      const { execFile } = await import('node:child_process');
+      const root98 = await mkdtemp(join(tmpdir(), 'dsh-undo-w98-'));
+      const bin98 = join(root98, 'dsh', 'resources', 'runtime', 'primary-runtime', 'dependencies', 'node', 'bin');
+      await mkdir(bin98, { recursive: true });
+      await writeFile(join(bin98, 'node.exe'), 'dummy');
+      await mkdir(join(root98, 'home', 'undo'), { recursive: true });
+      await writeFile(join(root98, 'home', 'undo', 'dsh-root.txt'), join(root98, 'dsh') + '\n');
+      const fake98 = join(root98, 'fake-node.exe');
+      await writeFile(fake98, 'dummy');
+      const run98 = (env) => new Promise((resolve) => {
+        execFile('cmd.exe', ['/c', join(repoDir95, 'tools', 'launch-undo.bat'), '--print-node'],
+          { timeout: 20000, windowsHide: true, env: { ...process.env, DSH_UNDO_NODE: '', ...env } },
+          (err, stdout) => resolve({ ok: !err, out: String(stdout ?? '').trim() }));
+      });
+      const r198 = await run98({ DSH_UNDO_SETTINGS: join(root98, 'home', 'undo', 'settings.json') });
+      check(r198.ok && r198.out === join(bin98, 'node.exe'),
+        'W98: 有安装根记录时用 DSH 自带 node（实得 ' + (r198.out || '空') + '）');
+      const r298 = await run98({ DSH_UNDO_NODE: fake98 });
+      check(r298.ok && r298.out === fake98, 'W98: DSH_UNDO_NODE 显式覆盖优先于安装根记录');
+      const r398 = await run98({ DSH_UNDO_SETTINGS: join(root98, 'nope', 'settings.json') });
+      check(r398.ok && r398.out.toLowerCase().endsWith('node.exe') && r398.out !== join(bin98, 'node.exe'),
+        'W98: 无记录时回落 PATH 里的 node（实得 ' + (r398.out || '空') + '）');
+      await rm(root98, { recursive: true, force: true });
+    } else {
+      console.log('  skip - W98 launcher execution needs Windows cmd');
+      pass += 3;
+    }
+  }
 }
 
 console.log(`\n== RESULT: ${pass} passed, ${fail} failed ==`);
