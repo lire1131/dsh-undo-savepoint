@@ -13,24 +13,26 @@ It checks proactively and speaks only when something is wrong. A DSH version cha
 
 | Offline WebUI: port → Profile → snapshot store, with per-row Compare / Restore / Note / Delete |
 |---|
-| ![webui](https://cdn.jsdelivr.net/gh/lire1131/dsh-undo-savepoint@master/docs/shots/webui-main.en.png) |
+| ![webui](https://cdn.jsdelivr.net/gh/lire1131/dsh-undo-savepoint@master/docs/shots/webui-main-0.5.2.en.png) |
 
 | Snapshot diff: file navigation with add/remove counts, red/green lines | Settings: instances, snapshot policy, auto-cleanup and retention |
 |---|---|
-| ![diff](https://cdn.jsdelivr.net/gh/lire1131/dsh-undo-savepoint@master/docs/shots/webui-diff.en.png) | ![settings](https://cdn.jsdelivr.net/gh/lire1131/dsh-undo-savepoint@master/docs/shots/webui-settings.en.png) |
+| ![diff](https://cdn.jsdelivr.net/gh/lire1131/dsh-undo-savepoint@master/docs/shots/webui-diff-0.5.2.en.png) | ![settings](https://cdn.jsdelivr.net/gh/lire1131/dsh-undo-savepoint@master/docs/shots/webui-settings-0.5.2.en.png) |
 
 ## Core capabilities
 
 | Capability | What it does |
 |---|---|
 | **Config + plugin-code rollback** | Snapshots cover config files and user-plugin code trees; undo / redo / restore any version from the WebUI, chat or offline CLI. |
-| **Message-level undo** | Rolls back workspace file changes per AI message or 60s batch, without git or session storage. |
+| **File rollback** | Rolls back workspace file changes per AI message or 60s batch, without git and without touching session storage; chat history is kept. |
 | **One-click SAFE MODE** | When DSH cannot boot, only this plugin stays enabled so boot is guaranteed; snapshots and profile/home patches are backed up first. |
 | **Crash attribution** | Classifies the crash by log signature and names the last-known-good snapshot for one-click rollback. |
 | **Session-file repair** | `undo_scan` repairs single-frame layout violations and seq overlaps; what it cannot repair is quarantined, originals untouched. |
-| **Timeline and snapshot management** | Date grouping, notes and tags, scheduled snapshots, ZIP export/import. |
+| **Timeline and full-page management** | Date grouping, notes and tags, scheduled snapshots, ZIP export/import; the sidebar "Snapshots" entry opens the same list as a full page in the centre area, without covering the chat. |
+| **Pick your header buttons** | Undo, redo, snapshot, file rollback, snapshot badge and the single menu entry each have their own switch; by default only undo, redo, snapshot and the menu are shown. |
 | **Boot preflight and diagnostics** | `undo_doctor` checks hard boot failures plus patch and manifest structure; repairable findings are fixed in one step after a snapshot. |
 | **Offline emergency kit** | WebUI, GUI window, CLI and desktop shortcut: undo, diff, SAFE MODE and diagnostics while DSH is down. |
+| **Rescue without Node installed** | The offline tools reuse the Node shipped with DSH, so the WebUI and the guard still start on a machine with no system Node. |
 
 ## Platform support
 
@@ -43,7 +45,7 @@ It checks proactively and speaks only when something is wrong. A DSH version cha
 
 ## Installation
 
-Prerequisites: DSH (`@deepseek-ai/dsh`) and Node.js. DSH 0.2.2 and newer require Node.js ≥24.9 on the host; the plugin's offline CLI / GUI needs only ≥20.
+Prerequisites: DSH (`@deepseek-ai/dsh`). The offline tools reuse the Node shipped with DSH and fall back to a system Node (≥20), so they work on a machine without Node installed. Node requirements for the host itself are up to DSH; 0.2.2 and newer need ≥24.9.
 
 ### Desktop installation (recommended)
 
@@ -83,7 +85,9 @@ The install hooks check the external Node.js, PowerShell, the platform and wheth
 - **Manual save**: "Save" in the panel / tell the AI "save a snapshot".
 - **Restore to a fixed version**: "Restore to this" on a snapshot row.
 - **Delete a snapshot**: "Delete" in the panel.
-- **Message-level undo**: the header "conversation undo" entry opens the message list.
+- **File rollback**: the header "File rollback" entry lists message batches; rolling one back touches only its file changes and keeps the chat history.
+- **Full-page management**: the sidebar "Snapshots" entry opens the list as a scrollable page in the centre area.
+- **Choose your header buttons**: Settings → Snapshots → Advanced decides which header entries show; turning all six off still leaves the single menu entry.
 - **Settings**: auto-save, debounce, retention, snapshot directories and tracked workspace directories.
 
 ## When DSH won't boot
@@ -94,11 +98,11 @@ Run the offline WebUI, which does not depend on DSH.
 node tools/undo-server.mjs
 ```
 
-The local page carries the timeline, rollback, diff, diagnostics and SAFE MODE. A desktop shortcut is created on plugin load. To disable every user plugin except this one, use SAFE MODE, restart DSH, then re-enable plugins one by one.
+The local page carries the timeline, rollback, diff, diagnostics and SAFE MODE. A desktop shortcut is created on plugin load, and it uses the Node shipped with DSH when no system Node is installed. To disable every user plugin except this one, use SAFE MODE, restart DSH, then re-enable plugins one by one.
 
 ## Support range
 
-`engines.dsh` in `package.json` covers the successive 0.1.x and 0.2.x declarations, ending with `>=0.2.2-0`. Verified: DSH 0.2.0-rc.2 desktop, 0.2.1-rc.3 and 0.2.1-rc.5; DSH 0.2.2-rc.1 was verified in an isolated instance for host activation and client assembly, while the desktop build still needs a check on the maintainer's machine.
+`engines.dsh` in `package.json` covers the successive 0.1.x and 0.2.x declarations, ending with `>=0.2.2-0`. Verified on the desktop build against DSH 0.2.0-rc.2, 0.2.1-rc.3, 0.2.1-rc.5 and 0.2.2-rc.5.
 
 DSH 0.2.2 and newer require Node.js 24.9 on the host; the plugin's offline tools still need only 20, and the two are judged separately. If your DSH version falls outside the declared range, do not edit `package.json`; use the official version exemption.
 

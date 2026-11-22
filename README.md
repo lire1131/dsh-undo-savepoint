@@ -13,24 +13,26 @@
 
 | 局外 WebUI：端口 → Profile → 快照库，逐条对比 / 恢复 / 备注 / 删除 |
 |---|
-| ![webui](https://cdn.jsdelivr.net/gh/lire1131/dsh-undo-savepoint@master/docs/shots/webui-main.png) |
+| ![webui](https://cdn.jsdelivr.net/gh/lire1131/dsh-undo-savepoint@master/docs/shots/webui-main-0.5.2.png) |
 
 | 快照对比：左栏文件导航带增删行数，右栏逐行红绿 | 设置：实例管理、快照策略、自动清理与保留数量 |
 |---|---|
-| ![diff](https://cdn.jsdelivr.net/gh/lire1131/dsh-undo-savepoint@master/docs/shots/webui-diff.png) | ![settings](https://cdn.jsdelivr.net/gh/lire1131/dsh-undo-savepoint@master/docs/shots/webui-settings.png) |
+| ![diff](https://cdn.jsdelivr.net/gh/lire1131/dsh-undo-savepoint@master/docs/shots/webui-diff-0.5.2.png) | ![settings](https://cdn.jsdelivr.net/gh/lire1131/dsh-undo-savepoint@master/docs/shots/webui-settings-0.5.2.png) |
 
 ## 核心能力
 
 | 能力 | 说明 |
 |---|---|
 | **配置与插件代码回滚** | 快照覆盖配置与用户插件代码树，undo / redo / 回退任意版本，WebUI、对话、离线 CLI 三入口。 |
-| **消息级撤销** | 按 AI 消息或 60s 批次回滚工作区文件改动，不依赖 git，不碰会话存储。 |
+| **文件回退** | 按 AI 消息或 60s 批次回滚工作区文件改动，不依赖 git，不碰会话存储，聊天记录保留。 |
 | **一键安全模式** | DSH 完全起不来时只保留本插件保证启动，自动快照并备份 profile 与 home 补丁。 |
 | **崩溃归因** | 按日志签名分类崩溃原因，给出最后正常快照与一键回退。 |
 | **会话扫描修复** | `undo_scan` 修复会话单帧布局违规与 seq 重叠，修不了的隔离，原件不动。 |
-| **时间线与快照管理** | 日期分组、备注标签、定时快照、ZIP 导出导入。 |
+| **时间线与整页管理** | 日期分组、备注标签、定时快照、ZIP 导出导入；侧边栏「快照管理」可在中央区域整页打开，不遮罩对话。 |
+| **对话头控件可选** | 撤销、重做、快照、文件回退、快照徽章、单入口菜单六项各自开关，默认只放撤销、重做、创建快照与菜单。 |
 | **启动预检与诊断** | `undo_doctor` 检查启动硬失败与补丁、清单结构，可修项一键修复，修前自动落快照。 |
 | **局外急救** | WebUI、GUI 窗口、CLI 与桌面快捷方式，DSH 挂了也能回滚、对比、进安全模式。 |
+| **不装 Node 也能救** | 离线工具优先用 DSH 自带的 Node，系统没装 Node 时也能起 WebUI 与守卫。 |
 
 ## 平台支持
 
@@ -43,7 +45,7 @@
 
 ## 安装
 
-前置：已安装 DSH（`@deepseek-ai/dsh`）与 Node.js。DSH 0.2.2 及以后版本的宿主要求 Node.js ≥24.9；本插件的离线 CLI / GUI 只要求 ≥20。
+前置：已安装 DSH（`@deepseek-ai/dsh`）。离线工具优先复用 DSH 自带的 Node，找不到再回落系统 Node（≥20），系统没装 Node 也能用。宿主本身对 Node 的要求由 DSH 决定，0.2.2 及以后要 ≥24.9。
 
 ### 桌面端安装（推荐）
 
@@ -83,7 +85,9 @@ dsh plugin --profile web add dsh-undo-savepoint
 - **手动保存**：面板「手动保存」/ 对 AI 说「保存快照」。
 - **回退到指定版本**：面板里点快照行「回退到此版本」。
 - **删除快照**：面板里点「删除」。
-- **消息级撤销**：对话头部「对话撤回」，选择消息批次撤回其文件改动。
+- **文件回退**：对话头部「文件回退」，选消息批次只回退它的文件改动，不删除聊天记录。
+- **整页管理**：侧边栏「快照管理」图标点开，快照列表在中央区域整页显示，可滚动。
+- **头部控件取舍**：设置 → 快照 → 高级里勾选头部显示哪几项，六项全关时仍保留单入口菜单。
 - **设置**：通用页可改自动保存、防抖、保留数、两个快照目录与跟踪工作区目录。
 
 ## DSH 起不来时
@@ -94,11 +98,11 @@ dsh plugin --profile web add dsh-undo-savepoint
 node tools/undo-server.mjs
 ```
 
-时间线、回滚、对比、诊断与安全模式都在这个本地页面里。插件加载后会自动创建桌面快捷方式，双击也能打开。需要一键禁用除本插件外的全部用户插件时，用安全模式，重启 DSH 后再逐个排查。
+时间线、回滚、对比、诊断与安全模式都在这个本地页面里。插件加载后会自动创建桌面快捷方式，双击也能打开。系统没装 Node 时，快捷方式用的是 DSH 自带的 Node。需要一键禁用除本插件外的全部用户插件时，用安全模式，重启 DSH 后再逐个排查。
 
 ## 支持范围
 
-`package.json` 的 `engines.dsh` 覆盖 0.1.x 与 0.2.x 的历次声明，末段为 `>=0.2.2-0`。已验证桌面版 DSH 0.2.0-rc.2、0.2.1-rc.3 与 0.2.1-rc.5；0.2.2-rc.1 在隔离实例里验证过宿主激活与客户端装配，桌面形态待维护者机器复核。
+`package.json` 的 `engines.dsh` 覆盖 0.1.x 与 0.2.x 的历次声明，末段为 `>=0.2.2-0`。已验证桌面版 DSH 0.2.0-rc.2、0.2.1-rc.3、0.2.1-rc.5 与 0.2.2-rc.5。
 
 DSH 0.2.2 起宿主要求 Node.js 24.9，本插件离线工具仍只要求 20，两者分开判定。版本不在声明范围内时，不要改 `package.json`，用官方的版本豁免。
 
