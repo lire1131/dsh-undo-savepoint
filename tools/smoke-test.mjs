@@ -4920,9 +4920,10 @@ console.log('== W73/W74/W76/W77/W78. client surface (portal / header modes / dra
     'W77: 两个浮层都走 UndoLayer（createPortal 到 body），react-dom 缺失时降级不抛错');
 
   // W78（#52）：底部抽屉、视口上限、横向滚动、减少动效。
+  // W103 起减少动效从「只关面板动画」收紧为插件作用域内动画与过渡全关，判据不放宽。
   check(/\.u_overlay\{[^}]*align-items:flex-end/.test(cliText)
     && /\.u_panel\{width:min\(1180px,96vw\);max-height:calc\(100vh - 40px\)/.test(cliText)
-    && cliText.includes('@media (prefers-reduced-motion:reduce){.u_panel{animation:none}}')
+    && cliText.includes('@media (prefers-reduced-motion:reduce){[class^=\'u_\'],[class*=\' u_\']{animation:none!important;transition:none!important}}')
     && /\.u_tbody\{overflow:auto/.test(cliText),
     'W78: 浮层改底部抽屉、面板限制在视口内、表格可横向滚动、尊重减少动效偏好');
 
@@ -5008,11 +5009,13 @@ console.log('== W93/W94/W95. client behavior (badge children / naming / portal t
       throw new Error('client behavior harness has no stub for module: ' + id);
     };
     // eslint-disable-next-line no-new-func
-    new Function('window', 'document', 'localStorage', source)(windowStub, documentStub, localStorageStub);
+    const navigatorStub = o.navigator || { userAgent: 'node-smoke-harness/1.0' };
+    new Function('window', 'document', 'localStorage', 'navigator', source)(
+      windowStub, documentStub, localStorageStub, navigatorStub);
     const cfg = windowStub.__cfg;
     if (!cfg || typeof cfg.factory !== 'function') throw new Error('loader did not receive a factory');
     const api = cfg.factory(requireStub);
-    return { api, bodyStub, resetHooks: () => { hookIndex = 0; } };
+    return { api, bodyStub, docStub: documentStub, resetHooks: () => { hookIndex = 0; } };
   }
 
   /** 元素树里的字符串节点（portal 节点取被 portal 的那棵子树）。 */
@@ -5295,6 +5298,202 @@ console.log('== W93/W94/W95. client behavior (badge children / naming / portal t
       console.log('  skip - W98 launcher execution needs Windows cmd');
       pass += 3;
     }
+  }
+
+  // ── W100..W104：观感批次（标题栏留白 / 标尺 / 三态 / 动效 / 对比度）───────────────
+  // 这一批只动观感，但每条都要能数：样式从 client.js 的两个 CSS 串里重新解析，
+  // 三态与 Electron 标记走执行级渲染，对比度算术与 tools/check-contrast.mjs 同一份。
+  {
+    const c3Lines = cliSrc95.split(/\r?\n/);
+    const cssC3 = c3Lines[13].match(/const css = "(.*)";\s*$/)[1] + c3Lines[23].match(/const css2 = "(.*)";\s*$/)[1];
+
+    // W100：桌面端遮罩避开原生标题栏（#54）
+    const plainOverlay100 = (cssC3.match(/\.u_overlay\{[^}]*\}/) || [''])[0];
+    const insetRules100 = [...cssC3.matchAll(/[^{}]*\{[^}]*inset:var\(--u-titlebar-h\)[^}]*\}/g)].map((m) => m[0]);
+    check(plainOverlay100.includes('inset:0') && !plainOverlay100.includes('--u-titlebar-h'),
+      'W100: 非 Electron 时遮罩仍是 inset:0，规则里没有顶部偏移');
+    check(insetRules100.length === 1
+      && /\.u_overlay:not\(\.u_overlayPage\)/.test(insetRules100[0])
+      && /\.u_diffOverlay/.test(insetRules100[0])
+      && /data-undo-shell/.test(insetRules100[0])
+      && /data-windows-titlebar/.test(insetRules100[0]),
+      'W100: 三个浮层共用一条偏移规则（整页类被 :not() 排除），客户端标记与宿主 Windows 标记都认');
+    const tbDefs100 = [...cssC3.matchAll(/--u-titlebar-h:([^;}]+)/g)].map((m) => m[1]);
+    check(tbDefs100.length === 1 && tbDefs100[0].includes('var(--dsh-windows-titlebar-height')
+      && tbDefs100[0].includes('40px') && [...cssC3.matchAll(/var\(--u-titlebar-h\)/g)].length === 1,
+      'W100: 偏移量只一个变量，优先吃宿主标题栏高度、拿不到回落 40px');
+
+    const applyCtx100 = () => ({
+      effect: (fn) => { try { return fn(); } catch (e) { return null; } },
+      locale: { register: () => () => {}, bind: () => (k) => k },
+      slots: { inject: (name, fn) => fn(), register: (cfg) => cfg }
+    });
+    const hElectron100 = makeHarness95(cliSrc95, { navigator: { userAgent: 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 Chrome/131 Electron/44.7.0' } });
+    hElectron100.api.apply(applyCtx100());
+    const hWeb100 = makeHarness95(cliSrc95, { navigator: { userAgent: 'Mozilla/5.0 (Windows NT 10.0) AppleWebKit/537.36 Chrome/131 Safari/537.36' } });
+    hWeb100.api.apply(applyCtx100());
+    check(hElectron100.docStub.documentElement.dataset.undoShell === 'electron'
+      && hWeb100.docStub.documentElement.dataset.undoShell === undefined,
+      'W100: Electron UA 写 data-undo-shell，普通浏览器 UA 不写（执行级，非源码文本）');
+
+    // W101：间距、圆角、描边、字级收敛到一套标尺
+    const spacingValues101 = (text) => {
+      const out = [];
+      for (const m of text.matchAll(/(?:^|[;{])(padding|gap|margin(?:-[a-z]+)?):([^;}]+)/g)) {
+        for (const n of m[2].matchAll(/-?\d+(?:\.\d+)?px/g)) out.push(Number(n[0].replace('px', '')));
+      }
+      return out;
+    };
+    const SCALE101 = [0, 4, 8, 12, 16, 24, 32, 48];
+    const offScale101 = (text) => [...new Set(spacingValues101(text).filter((n) => !SCALE101.includes(n)))];
+    check(offScale101(cssC3).length === 0,
+      'W101: 间距只落四档标尺 4/8/12/16（块级 24/32/48），越界：' + (offScale101(cssC3).join(',') || '无'));
+    const radii101 = [...new Set([...cssC3.matchAll(/border-radius:([^;}]+)/g)].map((m) => m[1].trim()))];
+    check(radii101.every((r) => ['0', '8px', '12px', '999px', '50%'].includes(r)),
+      'W101: 圆角只两档 8/12（999 胶囊、50% 圆点、0 直角属形状不属档位）：' + radii101.join('|'));
+    const widths101 = [...new Set([...cssC3.matchAll(/border(?:-(?!radius)[a-z]+)?:\s*([^;}]+)/g)]
+      .map((m) => (m[1].match(/\d*\.?\d+px/g) || []).filter((x) => x !== '0px').join('/')).filter(Boolean))];
+    check(widths101.every((w) => w.split('/').every((x) => x === '1px' || x === '.5px')),
+      'W101: 描边只 0.5px 与 1px：' + widths101.join('|'));
+    const fonts101 = [...new Set([...cssC3.matchAll(/font-size:([^;}]+)/g)].map((m) => m[1].trim()))];
+    check(fonts101.every((f) => ['11px', '12px', '14px', '16px'].includes(f)),
+      'W101: 字号只 11/12/14 三档加主标题 16：' + fonts101.join('|'));
+    check(offScale101('.u_x{padding:14px 6px}.u_y{gap:10px}').join(',') === '14,6,10',
+      'W101 负向对照：塞进 14/6/10px 的样本串，同一解析函数报红');
+
+    // 同一套标尺也管局外 WebUI：拆掉 .sr-only（视觉隐藏配方自带 -1px）再核。
+    const webuiCss101 = await readFile(join(repoDir95, 'tools', 'webui', 'styles.css'), 'utf8');
+    const srOnly101 = (webuiCss101.match(/\.sr-only \{[^}]*\}/) || [''])[0];
+    const webuiBody101 = webuiCss101.replace(/\/\*[^]*?\*\//g, '').replace(srOnly101, '');
+    check(offScale101(webuiBody101).length === 0 && srOnly101.includes('margin: -1px'),
+      'W101: 局外 WebUI 同一套四档间距（.sr-only 的 -1px 是视觉隐藏配方，单独保留）：越界 '
+        + (offScale101(webuiBody101).join(',') || '无'));
+    const webuiRadii101 = [...new Set([...webuiBody101.matchAll(/border-radius:\s*([^;}]+)/g)].map((m) => m[1].trim()))];
+    check(webuiRadii101.every((r) => ['8px', '12px', '999px', '50%'].includes(r)),
+      'W101: 局外 WebUI 圆角同样两档 8/12：' + webuiRadii101.join('|'));
+    const webuiFonts101 = [...new Set([...webuiBody101.matchAll(/font-size:\s*([^;}]+)/g)].map((m) => m[1].trim()))];
+    check(webuiFonts101.every((f) => ['11px', '12px', '14px', '16px', '24px'].includes(f))
+      && webuiFonts101.filter((f) => f === '24px').length === 1,
+      'W101: 局外 WebUI 字号同样三档加主标题，24px 只给图标：' + webuiFonts101.join('|'));
+
+    // W102：三态与空状态统一（快照面板 / 文件回退面板 / 整页）
+    const pickPanel102 = (harness, name) => {
+      const host = harness.api.UndoHeader({ t: T95, onOpenPanel: () => {} });
+      const el = walkEls95(host).find((e) => typeof e.type === 'function' && e.type.name === name);
+      if (!el) return null;
+      harness.resetHooks();
+      return el.type(el.props);
+    };
+    const stateNode102 = (root) => (root ? walkEls95(root).find((e) => typeof e.type === 'function' && e.type.name === 'UndoState') : null);
+    const paint102 = (node) => (node && typeof node.type === 'function' ? node.type(node.props) : node);
+
+    const hMsgLoad102 = makeHarness95(cliSrc95, { seed: { 4: true } });
+    const msgLoadState102 = stateNode102(pickPanel102(hMsgLoad102, 'MessagePanel'));
+    const msgLoadBox102 = paint102(msgLoadState102);
+    const skelBox102 = msgLoadBox102 && byClass95(msgLoadBox102, 'u_skel');
+    check(!!msgLoadState102 && msgLoadState102.props.kind === 'loading' && !!skelBox102
+      && walkEls95(skelBox102).filter((e) => e.props && e.props.className === 'u_skelLine').length === 3,
+      'W102: 文件回退面板加载态是三条骨架，不再是「处理中」一行字');
+
+    const hMsgEmpty102 = makeHarness95(cliSrc95, { seed: { 1: [], 4: true } });
+    const msgEmptyState102 = stateNode102(pickPanel102(hMsgEmpty102, 'MessagePanel'));
+    const msgEmptyBox102 = paint102(msgEmptyState102);
+    check(!!msgEmptyState102 && msgEmptyState102.props.kind === 'empty' && !!byClass95(msgEmptyBox102, 'u_statePrimary'),
+      'W102: 空态给可点主操作（u_statePrimary），不再只有一行字');
+
+    const hMsgErr102 = makeHarness95(cliSrc95, { seed: { 4: true, 5: SEED95[5] } });
+    const msgErrState102 = stateNode102(pickPanel102(hMsgErr102, 'MessagePanel'));
+    const msgErrBox102 = paint102(msgErrState102);
+    check(!!msgErrState102 && msgErrState102.props.kind === 'error' && !!byClass95(msgErrBox102, 'u_statePrimary')
+      && flatStrings95(msgErrBox102).includes('panel.retry'),
+      'W102: 错误态给重试按钮，文案走词条 panel.retry');
+
+    const hSnap102 = makeHarness95(cliSrc95, { seed: {} });
+    hSnap102.resetHooks();
+    const snapOuter102 = hSnap102.api.SnapshotPanel({ t: T95, onClose: () => {} });
+    const snapTree102 = typeof snapOuter102.type === 'function' ? snapOuter102.type(snapOuter102.props) : snapOuter102;
+    hSnap102.resetHooks();
+    const pageTree102 = hSnap102.api.SnapshotPanel({ t: T95, asPage: true, onClose: () => {} });
+    const snapState102 = stateNode102(snapTree102);
+    const pageState102 = stateNode102(pageTree102);
+    check(!!snapState102 && snapState102.props.kind === 'loading'
+      && !!byClass95(paint102(snapState102), 'u_skel')
+      && !!pageState102 && pageState102.props.kind === 'loading',
+      'W102: 快照面板与整页首帧同样走骨架（同一个 UndoState 组件）');
+
+    const boxes102 = [msgLoadBox102, msgEmptyBox102, msgErrBox102, paint102(snapState102)]
+      .map((b) => (b && b.props && b.props.className) || '');
+    check(boxes102.every((c) => c === 'u_state'),
+      'W102: 三处三态容器同一个类名 u_state，内边距只有一份：' + JSON.stringify(boxes102));
+    // 镜像稿实测：浅色下 bg-layer-2 与面板底色同为 #fff，骨架线会看不见，改用宿主的 skeleton token
+    check(/\.u_skelLine\{[^}]*background:var\(--dsw-alias-bg-skeleton\)/.test(cssC3)
+      && !/\.u_skelLine\{[^}]*bg-layer-2/.test(cssC3),
+      'W102: 骨架线用背景专用 token（浅色下与面板底色可辨），不再用会与面板同色的 bg-layer-2');
+
+    const GOOD_LOADING102 = 'content = (0, react_jsx_runtime.jsx)(UndoState, { kind: "loading", text: t("busy") });';
+    const BUGGY_LOADING102 = 'content = (0, react_jsx_runtime.jsx)("div", { className: styles.empty, children: t("busy") });';
+    const buggySrc102 = cliSrc95.split(GOOD_LOADING102).join(BUGGY_LOADING102);
+    check(cliSrc95.includes(GOOD_LOADING102) && !buggySrc102.includes(GOOD_LOADING102),
+      'W102 负向对照：退回一行字写法的锚点可用');
+    const hBuggy102 = makeHarness95(buggySrc102, { seed: { 4: true } });
+    const buggyBox102 = paint102(stateNode102(pickPanel102(hBuggy102, 'MessagePanel')));
+    check(buggyBox102 === null || !byClass95(buggyBox102, 'u_skel'),
+      'W102 负向对照：退回 u_empty 一行字后骨架断言变红');
+
+    // W103：动效收敛到三档时长，减少动效时全关
+    const durationSet103 = (text) => [...new Set([...text.matchAll(/(\d+(?:\.\d+)?)(ms|s)\b/g)].map((m) => m[0]))].sort();
+    check(durationSet103(cssC3).join(',') === '120ms,180ms,240ms',
+      'W103: 时长只剩三档 120/180/240ms：' + durationSet103(cssC3).join('|'));
+    const easings103 = [...new Set([...cssC3.matchAll(/cubic-bezier\([^)]*\)/g)].map((m) => m[0]))];
+    const legacy103 = [...new Set([...cssC3.matchAll(/\b(?:ease-out|ease-in|ease-in-out)\b/g)].map((m) => m[0]))];
+    check(easings103.length === 1 && legacy103.length === 0,
+      'W103: 缓动只一条 cubic-bezier，旧 ease-out 关键字清零');
+    const rmBlock103 = (cssC3.match(/@media \(prefers-reduced-motion:reduce\)\{[^]*?\}\}/) || [''])[0];
+    check(rmBlock103.includes('animation:none!important') && rmBlock103.includes('transition:none!important')
+      && rmBlock103.includes("[class^='u_']") && rmBlock103.includes("[class*=' u_']"),
+      'W103: 减少动效时插件作用域内动画与过渡全关');
+    check(durationSet103('.u_a{transition:color 333ms ease}').join(',') === '333ms'
+      && durationSet103(cssC3).join(',') === '120ms,180ms,240ms',
+      'W103 负向对照：塞进 333ms 的样本串被解析出来，档位断言能真变红');
+
+    // 局外 WebUI 的动效只核实际声明（变量定义里的旧值不算动效）
+    const webuiMotions103 = [...webuiBody101.matchAll(/(?:transition|animation):\s*([^;}]+)/g)].map((m) => m[1]);
+    const webuiDur103 = [...new Set(webuiMotions103.flatMap((v) => (v.match(/(\d+(?:\.\d+)?)(ms|s)\b/g) || [])))].sort();
+    const webuiEase103 = [...new Set(webuiMotions103.flatMap((v) => (v.match(/var\(--ease\)|cubic-bezier\([^)]*\)|\b(?:ease|ease-out|ease-in|ease-in-out)\b/g) || [])))];
+    check(webuiDur103.every((d) => ['120ms', '180ms', '240ms'].includes(d)) && webuiDur103.length > 0
+      && webuiEase103.every((e) => e === 'var(--ease)'),
+      'W103: 局外 WebUI 动效同三档时长、缓动统一走 var(--ease)：' + webuiDur103.join('|') + ' / ' + webuiEase103.join('|'));
+
+    // W104：深色模式对比度，只用主题 token
+    const raw104 = [...cssC3.matchAll(/#[0-9a-fA-F]{3,8}\b|rgba?\([^)]*\)/g)].map((m) => m[0]);
+    check(raw104.length === 0, 'W104: 两个样式串零裸色，全部走主题 token：' + (raw104.join(',') || '无'));
+    const inkDefs104 = [...cssC3.matchAll(/--u-ink-[a-z]+:([^;}]+)/g)].map((m) => m[1]);
+    check(inkDefs104.length === 4 && inkDefs104.every((v) => /var\(--dsw-alias-state-[a-z-]+\)/.test(v)
+      && v.includes('var(--dsw-alias-label-primary)') && v.includes('60%')),
+      'W104: 四个状态文字色都由主题 token 按 60/40 派生，不写字面色值');
+    const stateClasses104 = ['u_err', 'u_warn', 'u_undo', 'u_redo', 'u_safe', 'u_diffadd', 'u_diffdel',
+      'u_diffLineAdd', 'u_diffLineDel', 'u_diffAddStat', 'u_diffDelStat', 'u_okc', 'u_errc'];
+    const missingInk104 = stateClasses104.filter((c) => {
+      const hit = cssC3.match(new RegExp('\\.' + c + '(?![\\w-])\\{[^}]*\\}'));
+      return !hit || !hit[0].includes('var(--u-ink-');
+    });
+    check(missingInk104.length === 0,
+      'W104: 状态色当文字用的 ' + stateClasses104.length + ' 条规则全部改走 ink 变量（缺：' + (missingInk104.join(',') || '无') + '）');
+    const contrast104 = await import('./check-contrast.mjs');
+    const report104 = contrast104.checkAll();
+    check(report104.failures.length === 0,
+      'W104: 深浅两套 ' + report104.results.length + ' 对全达标（宿主插件 ' + report104.host.results.length
+        + ' 对 + 局外 WebUI ' + report104.webui.results.length + ' 对），最低 ' + report104.minRatio.toFixed(2) + ':1');
+    const palette104 = ((webuiBody101.match(/:root \{[^}]*\}/) || [''])[0])
+      + ((webuiBody101.match(/\[data-theme="dark"\] \{[^}]*\}/) || [''])[0]);
+    const hexCount104 = (t) => (t.match(/#[0-9a-f]{3,8}\b/gi) || []).length;
+    check(hexCount104(palette104) > 0 && hexCount104(webuiBody101) === hexCount104(palette104),
+      'W104: 局外 WebUI 的字面色值只出现在两套调色板里，规则区零裸色（调色板 '
+        + hexCount104(palette104) + ' 处，全文 ' + hexCount104(webuiBody101) + ' 处）');
+    const badReport104 = contrast104.checkContrast(contrast104.loadFixture(), { inkWeight: 1 });
+    check(badReport104.failures.length > 0
+      && badReport104.failures.some((f) => f.id === 'ink-ok/panel' && f.ratio < 3),
+      'W104 负向对照：状态色不混合直接用（原值 2.28:1）时脚本报红，阈值确实在拦');
   }
 }
 

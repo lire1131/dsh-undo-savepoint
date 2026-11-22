@@ -19,7 +19,11 @@
 --dsw-alias-state-success-primary
 --dsw-specific-tip
 # W62/W57 追加：在 DSH 0.2.1-rc.3 主题包（app.asar 内 dsh-client-ui-theme@0.2.1-rc.3，lib/client.js）逐条核实存在。
+# 2026-11-22 canary.3 复核：下面 18 个变量在 0.2.2-rc.5（npm @deepseek-ai/dsh-client-ui-theme@0.2.2-rc.5）
+# 与 0.2.2-rc.3（本机桌面端产物）里都存在，alias 到 static 的映射与十六进制取值逐条相同。
 --dsw-alias-bg-layer-2
 --dsw-alias-state-warn-primary
 --dsw-elevation-panel
 --dsw-elevation-prominent
+# canary.3 W102 追加：骨架线颜色，在 0.2.2-rc.5 主题包（light rgba(0,0,0,0.04) / dark rgba(255,255,255,0.08)）与本机 0.2.2-rc.3 产物里都存在。
+--dsw-alias-bg-skeleton

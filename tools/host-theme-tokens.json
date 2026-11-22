@@ -1,0 +1,39 @@
+{
+  "_what": "宿主主题 token 取值固件，给 tools/check-contrast.mjs 算对比度用。CI 拿不到宿主产物，所以把插件实际吃到的那些 alias 解析成十六进制值钉在这里。",
+  "source": {
+    "host": "@deepseek-ai/dsh-desktop-runtime",
+    "verifiedAgainst": [
+      "0.2.2-rc.3（本机桌面端安装产物 D:\\dsh-desk\\resources\\app.asar）",
+      "0.2.2-rc.5（npm @deepseek-ai/dsh-client-ui-theme@0.2.2-rc.5 的 lib/client.js）",
+      "0.2.2-rc.5（本机桌面端安装产物 app.asar，2026-11-22 复核：body 与 body[data-ds-dark-theme] 两块里逐条实取）"
+    ],
+    "collectedAt": "2026-11-22",
+    "method": "从主题包的 alias 表逐条读到 static 调色板，再取 static 的十六进制值。深色取 [data-ds-dark-theme] 那一套。rc.5 真机产物用同一方法复核，另把 8 位十六进制（如 #0000003d）与 rgba 写法归一后比对。",
+    "equivalentAcrossVersions": "0.2.2-rc.3 与 0.2.2-rc.5 的 alias 到 static 映射、以及 static 十六进制值，逐条相同；差异只在 rgba 与 8 位十六进制的书写形式。",
+    "refreshWhen": "DSH 升版改了主题配色，或新用到别的 --dsw-alias-* token 时，按上面方法重取并更新本文件与 tools/dsw-theme-tokens.txt。"
+  },
+  "light": {
+    "--dsw-alias-bg-base": "#ffffff",
+    "--dsw-alias-bg-layer-1": "#ffffff",
+    "--dsw-alias-bg-layer-2": "#ffffff",
+    "--dsw-alias-label-primary": "#0f1115",
+    "--dsw-alias-label-secondary": "#61666b",
+    "--dsw-alias-label-tertiary": "#81858c",
+    "--dsw-alias-state-business-primary": "#4176e6",
+    "--dsw-alias-state-error-primary": "#ec1313",
+    "--dsw-alias-state-success-primary": "#22c55e",
+    "--dsw-alias-state-warn-primary": "#f59e0b"
+  },
+  "dark": {
+    "--dsw-alias-bg-base": "#151517",
+    "--dsw-alias-bg-layer-1": "#232324",
+    "--dsw-alias-bg-layer-2": "#2c2c2e",
+    "--dsw-alias-label-primary": "#f9fafb",
+    "--dsw-alias-label-secondary": "#cfd3d6",
+    "--dsw-alias-label-tertiary": "#adb2b8",
+    "--dsw-alias-state-business-primary": "#7aaaff",
+    "--dsw-alias-state-error-primary": "#f25a5a",
+    "--dsw-alias-state-success-primary": "#22c55e",
+    "--dsw-alias-state-warn-primary": "#f59e0b"
+  }
+}
