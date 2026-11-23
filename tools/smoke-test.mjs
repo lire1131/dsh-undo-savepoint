@@ -1400,7 +1400,7 @@ console.log('== B4b. patch manifest: multi-version substrings + client declarati
       && JSON.stringify(dshSegs.slice(0, -1)) === JSON.stringify([...w42Base, '>=0.2.1-0']),
     'W42: engines.dsh 末段为 >=0.2.2-0 且前九段逐字保留（OR 串未重构）',
   );
-  check(pkg.version === '0.5.1', 'W42: package.json version 为 0.5.1（stable 定稿）');
+  check(pkg.version === '0.5.2', 'W42: package.json version 为 0.5.2（stable 定稿）');
   const readmes42 = [
     ['README.md', '桌面端'],
     ['README.en.md', 'Desktop'],

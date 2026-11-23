@@ -2,6 +2,37 @@
 
 Notable changes to dsh-undo-savepoint. Dates are in local time (UTC+8). 中文版:[CHANGELOG.md](CHANGELOG.md)
 
+## [0.5.2] - 2026-11-23
+
+### Added
+
+- **Pick your header buttons (#57)**. Undo, redo, snapshot, file rollback, snapshot badge and the single menu entry each have their own switch under Settings, Snapshots, Advanced, with the first four on by default. The density setting stays, and turning all six off still leaves the single menu entry.
+- **Full-page snapshot management (#57)**. A new sidebar entry opens the snapshot list as a full page in the centre area, without covering the chat, and the page scrolls.
+- **Offline tools reuse the Node shipped with DSH (#57)**. The host records its install root on mount, and the launchers resolve an explicit override, the recorded root, then PATH, so the offline WebUI and guard work on a machine with no system Node.
+- **One state component for loading, empty and error**. A skeleton while loading, a primary action when empty, a retry on error, shared by the snapshot panel, the file-rollback panel and the full page; the file-rollback panel gains its missing error state.
+- **Desktop overlay clears the native title bar (#54)**. When Electron or the host Windows title-bar marker is present, the overlay starts below the title bar, taking the height from a host variable and falling back to 40px; the web build and the full page stay as they were.
+
+### Changed
+
+- **Icons unified to a stroked style**. 1.5px strokes, with seven new warning, clock, search, folder, connection, more and history icons replacing the emoji that stood in as icons.
+- **Settings page regrouped**. Four groups covering current state, saving and retention, storage and sensitivity, directories and shortcuts, with wrappable rows and shrinkable inputs.
+- **Visual scale converged**. Spacing 4/8/12/16, radii 8/12, borders 0.5px and 1px, type sizes 11/12/14 plus a 16px panel title, the same set for the in-host panels and the offline WebUI.
+- **Motion reduced to three durations**. 120/180/240ms with one easing curve, and everything inside the plugin switches off when the system asks for reduced motion.
+- **Conversation undo renamed to file rollback (#56)**. The name and the panel note state that only file changes are rolled back and chat history stays.
+- **DSH 0.2.2-rc.5 adaptation re-checked**. On the real 0.2.2-rc.5 desktop build the five host slots, 19 theme tokens and the title-bar marker and height are unchanged; the `engines.dsh` declaration stays as it was.
+
+### Fixed
+
+- **Badge time rendered as `[object Object]` (#56)**. The badge children added a React element to a string, turning the element into an object literal; separate child nodes fix the display.
+- **State colours too light for text on the light theme**. Success, warning, business and error text now use darker derived values, 4.93:1 at worst on light and 7.46:1 at worst on dark.
+- **Skeleton lines invisible against the panel**. Skeletons use a dedicated background token and are visible on both themes.
+
+### Tests
+
+- **Gates**. 737 smoke checks, 36 host-api, 35 undo-server, 3 home-resolution, 14 e2e; check-routes 22 routes on both sides, 2 in-host only and 3 offline only; check-size 1566848 bytes; 8 GATE_OK entries from check-client-exports.
+- **New contrast check**. `tools/check-contrast.mjs` measures 22 in-host plugin pairs and 24 offline WebUI pairs against 4.5:1 for body text and 3:1 for secondary text, wired into `npm test`.
+- **New regression coverage**. Four title-bar checks including two execution-level ones, eight visual-scale checks, eight state checks, five motion checks and six contrast checks, each with a negative control.
+
 ## [0.5.1] - 2026-11-07
 
 ### Added
@@ -113,7 +144,7 @@ Notable changes to dsh-undo-savepoint. Dates are in local time (UTC+8). 中文�
 
 Full entries for older versions live in git history; every version has a tag, e.g. `git show v0.4.10 -- CHANGELOG.en.md`.
 
-| Version | Date
+| Version | Date |
 |---|---|
 | 0.5.0-canary.6 | 2026-10-19 |
 | 0.5.0-canary.5 | 2026-10-05 |
