@@ -256,16 +256,16 @@ try {
   const E = await startServer(['--home', bootHome]);
   check(E.url !== null, '局外 B：带 --home 的服务器启动成功');
   const eport = Number(new URL(E.url).port);
-  const Eget = async (p) => {
-    const r = await fetch(new URL('api/undo/' + p, E.url), { signal: AbortSignal.timeout(4000) });
+  const Eget = async (p, timeoutMs) => {
+    const r = await fetch(new URL('api/undo/' + p, E.url), { signal: AbortSignal.timeout(timeoutMs ?? 4000) });
     return { status: r.status, body: await r.json().catch(() => null) };
   };
-  const Epost = async (p, body) => {
+  const Epost = async (p, body, timeoutMs) => {
     const r = await fetch(new URL('api/undo/' + p, E.url), {
       method: 'POST',
       headers: { 'content-type': 'application/json' },
       body: JSON.stringify(body ?? {}),
-      signal: AbortSignal.timeout(4000),
+      signal: AbortSignal.timeout(timeoutMs ?? 4000),
     });
     return { status: r.status, body: await r.json().catch(() => null) };
   };
@@ -351,7 +351,9 @@ try {
     '局外 B：切回同 profile 无副作用（storeRoot 回到同作用域），{reset} 回到启动实例与 settings 文件');
 
   // scan：只给建议，形状固定，不抛栈（本机有没有 DSH 进程都允许空数组）
-  const scanE = await Epost('scan', {});
+  // scan 要扫本机进程，Windows 的 CI 跑一次可能到 5 秒以上，单独放宽到 20 秒；
+  // 其余端点仍是 4 秒，不放宽整体判据。
+  const scanE = await Epost('scan', {}, 20000);
   const sugE = scanE.body?.suggestions;
   check(scanE.status === 200 && scanE.body?.ok === true && Array.isArray(sugE)
     && typeof scanE.body.durationMs === 'number' && typeof scanE.body.scannedAt === 'string'
