@@ -11,7 +11,7 @@
 
 ## 预览
 
-| 局外 WebUI：端口 → Profile → 快照库，逐条对比 / 恢复 / 备注 / 删除 |
+| 局外 WebUI：端口 → Profile → 快照库三段式流程条，快照按日期分组，逐条对比 / 恢复 / 备注 / 删除 |
 |---|
 | ![webui](https://cdn.jsdelivr.net/gh/lire1131/dsh-undo-savepoint@master/docs/shots/webui-main-0.5.2.png) |
 
@@ -19,20 +19,21 @@
 |---|---|
 | ![diff](https://cdn.jsdelivr.net/gh/lire1131/dsh-undo-savepoint@master/docs/shots/webui-diff-0.5.2.png) | ![settings](https://cdn.jsdelivr.net/gh/lire1131/dsh-undo-savepoint@master/docs/shots/webui-settings-0.5.2.png) |
 
+| 批量处理：勾选多条后一键删除，先二次确认 | 安全模式：禁用其他插件前给出两条风险提示 |
+|---|---|
+| ![batch](https://cdn.jsdelivr.net/gh/lire1131/dsh-undo-savepoint@master/docs/shots/webui-batch-0.5.2.png) | ![safemode](https://cdn.jsdelivr.net/gh/lire1131/dsh-undo-savepoint@master/docs/shots/webui-safemode-0.5.2.png) |
+
 ## 核心能力
 
 | 能力 | 说明 |
 |---|---|
-| **配置与插件代码回滚** | 快照覆盖配置与用户插件代码树，undo / redo / 回退任意版本，WebUI、对话、离线 CLI 三入口。 |
-| **文件回退** | 按 AI 消息或 60s 批次回滚工作区文件改动，不依赖 git，不碰会话存储，聊天记录保留。 |
-| **一键安全模式** | DSH 完全起不来时只保留本插件保证启动，自动快照并备份 profile 与 home 补丁。 |
-| **崩溃归因** | 按日志签名分类崩溃原因，给出最后正常快照与一键回退。 |
-| **会话扫描修复** | `undo_scan` 修复会话单帧布局违规与 seq 重叠，修不了的隔离，原件不动。 |
-| **时间线与整页管理** | 日期分组、备注标签、定时快照、ZIP 导出导入；侧边栏「快照管理」可在中央区域整页打开，不遮罩对话。 |
-| **对话头控件可选** | 撤销、重做、快照、文件回退、快照徽章、单入口菜单六项各自开关，默认只放撤销、重做、创建快照与菜单。 |
-| **启动预检与诊断** | `undo_doctor` 检查启动硬失败与补丁、清单结构，可修项一键修复，修前自动落快照。 |
-| **局外急救** | WebUI、GUI 窗口、CLI 与桌面快捷方式，DSH 挂了也能回滚、对比、进安全模式。 |
-| **不装 Node 也能救** | 离线工具优先用 DSH 自带的 Node，系统没装 Node 时也能起 WebUI 与守卫。 |
+| **配置与插件代码回滚** | 快照覆盖配置与用户插件代码树，undo / redo / 回退任意版本，WebUI、对话、CLI 三入口。 |
+| **文件回退** | 按 AI 消息或 60s 批次回滚工作区文件改动，不依赖 git，不删聊天记录。 |
+| **一键安全模式** | DSH 起不来时只留本插件保证启动，改前先落快照。 |
+| **崩溃归因与自检修复** | 按日志签名给出最后正常快照；`undo_doctor` 查启动硬失败，`undo_scan` 修会话文件，改前都先存档。 |
+| **时间线与整页管理** | 日期分组、备注标签、定时快照、ZIP 导出导入；侧边栏「快照管理」整页打开，不遮罩对话。 |
+| **对话头控件可选** | 六项各自开关，默认只放撤销、重做、创建快照与单入口菜单。 |
+| **局外急救与免装 Node** | WebUI、GUI、CLI 与桌面快捷方式都能用，系统没装 Node 时复用 DSH 自带的那份。 |
 
 ## 平台支持
 

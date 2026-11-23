@@ -11,7 +11,7 @@ It checks proactively and speaks only when something is wrong. A DSH version cha
 
 ## Preview
 
-| Offline WebUI: port → Profile → snapshot store, with per-row Compare / Restore / Note / Delete |
+| Offline WebUI: port → Profile → snapshot store, snapshots grouped by date, with per-row Compare / Restore / Note / Delete |
 |---|
 | ![webui](https://cdn.jsdelivr.net/gh/lire1131/dsh-undo-savepoint@master/docs/shots/webui-main-0.5.2.en.png) |
 
@@ -19,20 +19,21 @@ It checks proactively and speaks only when something is wrong. A DSH version cha
 |---|---|
 | ![diff](https://cdn.jsdelivr.net/gh/lire1131/dsh-undo-savepoint@master/docs/shots/webui-diff-0.5.2.en.png) | ![settings](https://cdn.jsdelivr.net/gh/lire1131/dsh-undo-savepoint@master/docs/shots/webui-settings-0.5.2.en.png) |
 
+| Batch actions: select several snapshots and delete them after a confirm | SAFE MODE: two risk warnings before other plugins are disabled |
+|---|---|
+| ![batch](https://cdn.jsdelivr.net/gh/lire1131/dsh-undo-savepoint@master/docs/shots/webui-batch-0.5.2.en.png) | ![safemode](https://cdn.jsdelivr.net/gh/lire1131/dsh-undo-savepoint@master/docs/shots/webui-safemode-0.5.2.en.png) |
+
 ## Core capabilities
 
 | Capability | What it does |
 |---|---|
-| **Config + plugin-code rollback** | Snapshots cover config files and user-plugin code trees; undo / redo / restore any version from the WebUI, chat or offline CLI. |
-| **File rollback** | Rolls back workspace file changes per AI message or 60s batch, without git and without touching session storage; chat history is kept. |
-| **One-click SAFE MODE** | When DSH cannot boot, only this plugin stays enabled so boot is guaranteed; snapshots and profile/home patches are backed up first. |
-| **Crash attribution** | Classifies the crash by log signature and names the last-known-good snapshot for one-click rollback. |
-| **Session-file repair** | `undo_scan` repairs single-frame layout violations and seq overlaps; what it cannot repair is quarantined, originals untouched. |
-| **Timeline and full-page management** | Date grouping, notes and tags, scheduled snapshots, ZIP export/import; the sidebar "Snapshots" entry opens the same list as a full page in the centre area, without covering the chat. |
-| **Pick your header buttons** | Undo, redo, snapshot, file rollback, snapshot badge and the single menu entry each have their own switch; by default only undo, redo, snapshot and the menu are shown. |
-| **Boot preflight and diagnostics** | `undo_doctor` checks hard boot failures plus patch and manifest structure; repairable findings are fixed in one step after a snapshot. |
-| **Offline emergency kit** | WebUI, GUI window, CLI and desktop shortcut: undo, diff, SAFE MODE and diagnostics while DSH is down. |
-| **Rescue without Node installed** | The offline tools reuse the Node shipped with DSH, so the WebUI and the guard still start on a machine with no system Node. |
+| **Config + plugin-code rollback** | Snapshots cover config files and user-plugin code trees; undo / redo / restore any version from the WebUI, chat or CLI. |
+| **File rollback** | Rolls back workspace file changes per AI message or 60s batch, without git, keeping the chat history. |
+| **One-click SAFE MODE** | When DSH cannot boot, only this plugin stays enabled; a snapshot is taken before any change. |
+| **Crash attribution and self-repair** | Names the last-known-good snapshot from the log signature; `undo_doctor` fixes hard boot failures and `undo_scan` repairs session files, always after a snapshot. |
+| **Timeline and full-page management** | Date grouping, notes and tags, scheduled snapshots, ZIP export/import; the sidebar entry opens the list as a full page without covering the chat. |
+| **Pick your header buttons** | Six independent switches; by default only undo, redo, snapshot and the single menu entry show. |
+| **Offline rescue without Node** | WebUI, GUI, CLI and desktop shortcut all work, reusing the Node shipped with DSH when no system Node exists. |
 
 ## Platform support
 
