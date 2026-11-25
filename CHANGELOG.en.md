@@ -2,6 +2,22 @@
 
 Notable changes to dsh-undo-savepoint. Dates are in local time (UTC+8). 中文版:[CHANGELOG.md](CHANGELOG.md)
 
+## [0.5.3] - 2026-11-25
+
+### Fixed
+
+- **Install blocked by build-script approval**. 0.5.2 shipped two install scripts, so pnpm stopped the whole profile's dependency install and neither a git nor an npm install went through. This version drops both scripts and moves the environment check to the first mount and the offline launchers.
+- **The offline panel would not start without a system Node (#57)**. The install-root record was never written in 0.5.2, so a machine without Node got Node.js not found. This version resolves and records the install root on mount.
+
+### Changed
+
+- **Existing `allowBuilds` placeholder entries can be cleaned up**. The two entries left by a failed 0.5.2 install no longer block an install; delete them or set them to `false`.
+
+### Tests
+
+- **Gates**. smoke 748, host-api 36, undo-server 35, home-resolution 3 branches, e2e 14; check-size 1577766 bytes; check-contrast 46 pairs; check-routes 22 routes on both sides.
+- **New regressions**. One guard that no install script returns, three launcher preflight calls, two first-mount wiring checks, six install-root checks.
+
 ## [0.5.2] - 2026-11-23
 
 ### Added

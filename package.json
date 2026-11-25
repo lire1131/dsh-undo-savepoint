@@ -1,6 +1,6 @@
 {
   "name": "dsh-undo-savepoint",
-  "version": "0.5.2",
+  "version": "0.5.3",
   "description": "DSH undo/rollback system: snapshot config files on change, undo/redo the last action from the WebUI or by chat, and roll back broken plugin trees without reinstalling. Works even when DSH fails to boot (offline CLI + GUI).",
   "type": "module",
   "icon": "./tools/webui/logo.png",
@@ -14,8 +14,6 @@
   "scripts": {
     "test": "node tools/check-size.mjs && node tools/check-client-exports.mjs && node tools/check-version.mjs && node tools/check-contrast.mjs && node tools/check-routes.mjs && node tools/smoke-test.mjs && node tools/host-api-smoke.mjs && node tools/undo-server-smoke.mjs && node tools/home-resolution-test.mjs && node tools/e2e-watch.mjs",
     "check-contrast": "node tools/check-contrast.mjs",
-    "prepare": "node tools/install-preflight.mjs",
-    "postinstall": "node tools/install-preflight.mjs",
     "prepublishOnly": "npm test"
   },
   "engines": {

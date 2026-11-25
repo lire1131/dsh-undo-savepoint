@@ -52,5 +52,8 @@ if defined PRINT_NODE (
   exit /b 0
 )
 for %%F in ("%NODE_EXE%") do set "PATH=%%~dpF;%PATH%"
+rem Environment self-check (moved here from the package lifecycle hooks in 0.5.3):
+rem prints findings only, never blocks startup.
+"%NODE_EXE%" "%DIR%install-preflight.mjs"
 "%NODE_EXE%" "%DIR%undo-server.mjs" %*
 endlocal

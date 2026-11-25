@@ -2,6 +2,22 @@
 
 dsh-undo-savepoint 的重要变更。日期为本地时间（UTC+8)。English version: [CHANGELOG.en.md](CHANGELOG.en.md)
 
+## [0.5.3] - 2026-11-25
+
+### 修复
+
+- **装插件被构建脚本审批拦住**。0.5.2 自带两条安装脚本，pnpm 会因此停掉整个 profile 的依赖安装，git 源与 npm 源都装不进去。本版移除安装脚本，环境自检改到首次挂载与离线启动脚本。
+- **没装 Node 时离线面板打不开（#57）**。安装根记录在 0.5.2 里从未写出，系统没有 Node 就报 Node.js not found。本版改为在挂载时解析并记录安装根。
+
+### 变更
+
+- **存量 allowBuilds 占位条目可以清理**。0.5.2 装失败留下的两条不再拦安装，删掉或改成 `false` 都行。
+
+### 测试
+
+- **门禁**。smoke 748 项，host-api 36，undo-server 35，home-resolution 3 分支，e2e 14；check-size 1577766 字节；check-contrast 46 对；check-routes 双端 22 条。
+- **新增回归**。安装脚本清零 1 项，启动器自检 3 项，首次挂载接线 2 项，安装根解析与落盘 6 项。
+
 ## [0.5.2] - 2026-11-23
 
 ### 新增

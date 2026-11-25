@@ -75,9 +75,9 @@ dsh plugin --profile web add github:lire1131/dsh-undo-savepoint
 dsh plugin --profile web add dsh-undo-savepoint
 ```
 
-### Install-time environment check
+### Environment check
 
-The install hooks check the external Node.js, PowerShell, the platform and whether the DSH home is writable. Set `DSH_UNDO_SKIP_ENV_CHECK=1` to skip the check.
+On the first mount the plugin checks the external Node.js, PowerShell, the platform and whether the DSH home is writable, writes the result to the log, and never blocks startup. The offline launchers (`launch-undo.bat`, `launch-undo.sh`, `launch-undo.command`) call the same entry before starting the WebUI. Set `DSH_UNDO_SKIP_ENV_CHECK=1` to skip the check.
 
 ## Usage
 

@@ -27,4 +27,6 @@ fi
 if [ "$PRINT_NODE" = "1" ]; then echo "$NODE_EXE"; exit 0; fi
 PATH="$(dirname "$NODE_EXE"):$PATH"
 export PATH
+# 环境自检（0.5.3 起从 package 安装钩子移到这里）：只提示，不阻断启动。
+"$NODE_EXE" "$DIR/install-preflight.mjs" || true
 exec "$NODE_EXE" "$DIR/undo-server.mjs" "$@"

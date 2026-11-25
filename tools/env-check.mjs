@@ -1,4 +1,4 @@
-// 用途：安装期环境自检库（W84）。纯函数，探测手段可注入，零依赖。
+// 用途：环境自检库（W84）。安装期与启动期共用同一套判据。纯函数，探测手段可注入，零依赖。
 // 判据来自规划四 2.4：外部 node 缺失或主版本低于 20 为阻断；宿主 0.2.2 需要的
 // 24.9 只是提示项；PowerShell 缺失与非 Windows 平台为提示；DSH home 不可写为阻断。
 import { promises as fs, constants as fsConstants } from 'node:fs';
@@ -61,7 +61,7 @@ async function defaultProbeWritable(dir) {
 
 const MESSAGES = {
   zh: {
-    header: '[dsh-undo-savepoint] 安装前环境自检',
+    header: '[dsh-undo-savepoint] 环境自检',
     blocking: '阻断项',
     advisory: '提示项',
     none: '未发现阻断项。',
@@ -75,7 +75,7 @@ const MESSAGES = {
     homeUnwritable: { title: 'DSH home 不可写（{dir}）', hint: '可能后果：快照与恢复不可用。修复建议：检查目录权限或换一个 DSH home。' },
   },
   en: {
-    header: '[dsh-undo-savepoint] install-time environment check',
+    header: '[dsh-undo-savepoint] environment check',
     blocking: 'blocking',
     advisory: 'advisory',
     none: 'No blocking issue found.',

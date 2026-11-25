@@ -40,7 +40,7 @@ await writeFile(join(profile, 'package.json'), '{"name":"test","v":1}\n');
 //   undo/rollback-log.jsonl（此前已实测污染）。
 process.env.DSH_UNDO_SETTINGS = join(root, 'undo', 'settings.json');
 process.env.DSH_UNDO_ROOT = join(root, 'undo-snapshots');
-const { apply } = await import('../lib/index.js');
+const { apply, resolveDshRoot, recordDshRoot } = await import('../lib/index.js');
 
 const tools = new Map();
 const ctx = {
@@ -1400,7 +1400,7 @@ console.log('== B4b. patch manifest: multi-version substrings + client declarati
       && JSON.stringify(dshSegs.slice(0, -1)) === JSON.stringify([...w42Base, '>=0.2.1-0']),
     'W42: engines.dsh 末段为 >=0.2.2-0 且前九段逐字保留（OR 串未重构）',
   );
-  check(pkg.version === '0.5.2', 'W42: package.json version 为 0.5.2（stable 定稿）');
+  check(pkg.version === '0.5.3', 'W42: package.json version 为 0.5.3（stable 定稿）');
   const readmes42 = [
     ['README.md', '桌面端'],
     ['README.en.md', 'Desktop'],
@@ -4257,23 +4257,37 @@ console.log('== W85. install preflight entry ==');
   });
   check(abort85 === 2, `W85: --strict 遇阻断项退出 2（实得 ${abort85}）`);
   const zh85 = await run85({ DSH_UNDO_ENVCHECK_FAKE: fakeOk, DSH_UNDO_LANG: 'zh' });
-  check(zh85.code === 0 && zh85.out.includes('安装前环境自检'),
+  check(zh85.code === 0 && zh85.out.includes('环境自检'),
     'W85: DSH_UNDO_LANG=zh 输出中文报告');
 }
 
-console.log('== W86. wrapper hook + docs ==');
+console.log('== W86. hook-free package + launch-time preflight ==');
 {
   const pkg86 = JSON.parse(await readFile(fileURLToPath(new URL('../package.json', import.meta.url)), 'utf8'));
-  check(pkg86.scripts?.prepare === 'node tools/install-preflight.mjs'
-    && pkg86.scripts?.postinstall === 'node tools/install-preflight.mjs',
-    'W86: prepare 与 postinstall 都指向 install-preflight.mjs');
+  // 反向敏感：0.5.2 及以前带 prepare 与 postinstall。任何 lifecycle 脚本都会让 pnpm
+  // 把整个 profile 的依赖安装拦在 allowBuilds 审批上——git 托管包报
+  // ERR_PNPM_GIT_DEP_PREPARE_NOT_ALLOWED，npm 包报 ERR_PNPM_IGNORED_BUILDS。
+  const lifecycle86 = ['preinstall', 'install', 'postinstall', 'prepare']
+    .filter((name) => pkg86.scripts?.[name] !== undefined);
+  check(lifecycle86.length === 0,
+    `W86: package.json 不含任何 lifecycle 脚本（实得 ${lifecycle86.join(',') || '无'}）`);
   const wrap86 = await readFile(fileURLToPath(new URL('./dsh-plugin.ps1', import.meta.url)), 'utf8');
   check(wrap86.includes('install-preflight.mjs') && wrap86.includes('--strict'),
     'W86: 包装器在调用 dsh plugin 前跑同一入口的 --strict 模式');
+  for (const launcher86 of ['launch-undo.bat', 'launch-undo.sh', 'launch-undo.command']) {
+    const text86 = await readFile(fileURLToPath(new URL('./' + launcher86, import.meta.url)), 'utf8');
+    check(text86.includes('install-preflight.mjs'),
+      `W86: ${launcher86} 在启动离线 WebUI 前跑同一自检入口`);
+  }
+  const index86 = await readFile(fileURLToPath(new URL('../lib/index.js', import.meta.url)), 'utf8');
+  check(index86.includes('reportEnvironmentOnce') && index86.includes("from '../tools/env-check.mjs'"),
+    'W86: 首次挂载用同一 env-check 判据跑一次自检');
   const zh86 = await readFile(fileURLToPath(new URL('../README.md', import.meta.url)), 'utf8');
   const en86 = await readFile(fileURLToPath(new URL('../README.en.md', import.meta.url)), 'utf8');
   check(zh86.includes('DSH_UNDO_SKIP_ENV_CHECK') && en86.includes('DSH_UNDO_SKIP_ENV_CHECK'),
     'W86: 双语 README 都写了跳过开关与自检行为');
+  check(zh86.includes('首次挂载') && en86.includes('first mount'),
+    'W86: 双语 README 写明自检发生在首次挂载而不是安装钩子');
 }
 
 // ── W49：脱敏清单扩充（issue #39 SEC）────────────────────────────────────────
@@ -5298,6 +5312,36 @@ console.log('== W93/W94/W95. client behavior (badge children / naming / portal t
       console.log('  skip - W98 launcher execution needs Windows cmd');
       pass += 3;
     }
+  }
+
+  // ── W105（0.5.3，修复 #57 第三项）：安装根记录的解析端 ──────────────────────
+  // 反向敏感：0.5.2 只认 process.env.DSH_INSTALL_DIR，而该变量只注入给 shell 工具
+  // 调用（dsh-shell-env 每次调用重建，宿主进程的 process.env 不被修改），宿主里恒为空，
+  // dsh-root.txt 从未写出；系统没装 Node 的机器上离线启动器全灭（#57 现场截图）。
+  {
+    const root105 = await mkdtemp(join(tmpdir(), 'dsh-undo-w105-'));
+    const install105 = join(root105, 'install');
+    const bin105 = join(install105, 'resources', 'runtime', 'primary-runtime', 'dependencies', 'node', 'bin');
+    await mkdir(bin105, { recursive: true });
+    await writeFile(join(bin105, 'node.exe'), 'dummy');
+    check(resolveDshRoot({ resourcesPath: join(install105, 'resources'), execPath: join(root105, 'other', 'x.exe'), env: {} }) === install105,
+      'W105: 宿主给 resourcesPath 时解析出安装根');
+    check(resolveDshRoot({ resourcesPath: undefined, execPath: join(install105, 'DeepSeek Harness.exe'), env: {} }) === install105,
+      'W105: 只有 execPath 时也能解析出安装根');
+    check(resolveDshRoot({ resourcesPath: undefined, execPath: join(root105, 'bin', 'node.exe'), env: { DSH_INSTALL_DIR: join(install105, 'resources', 'app.asar', 'dsh') } }) === install105,
+      'W105: DSH_INSTALL_DIR 作为 source 启动兜底仍可解析');
+    check(resolveDshRoot({ resourcesPath: join(root105, 'empty', 'resources'), execPath: join(root105, 'empty', 'x.exe'), env: {} }) === undefined,
+      'W105: 候选根没有捆绑 Node 时不落记录');
+    const writeDir105 = join(root105, 'home', 'undo');
+    await mkdir(writeDir105, { recursive: true });
+    const wrote105 = await recordDshRoot(writeDir105, { resourcesPath: join(install105, 'resources'), execPath: join(root105, 'x.exe'), env: {} });
+    const recorded105 = (await readFile(join(writeDir105, 'dsh-root.txt'), 'utf8')).trim();
+    check(wrote105 === install105 && recorded105 === install105,
+      'W105: 解析结果按 dsh-root.txt 写盘，启动器读到的就是安装根');
+    await rm(root105, { recursive: true, force: true });
+    const index105 = await readFile(join(repoDir95, 'lib', 'index.js'), 'utf8');
+    check(index105.includes('recordDshRoot(dirname(SETTINGS_FILE))'),
+      'W105: 挂载时调用 recordDshRoot 落盘');
   }
 
   // ── W100..W104：观感批次（标题栏留白 / 标尺 / 三态 / 动效 / 对比度）───────────────

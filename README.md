@@ -75,9 +75,9 @@ dsh plugin --profile web add github:lire1131/dsh-undo-savepoint
 dsh plugin --profile web add dsh-undo-savepoint
 ```
 
-### 安装期环境自检
+### 环境自检
 
-安装钩子会检查外部 Node.js、PowerShell、平台与 DSH home 可写性。设置 `DSH_UNDO_SKIP_ENV_CHECK=1` 可跳过整个自检。
+插件首次挂载时检查外部 Node.js、PowerShell、平台与 DSH home 可写性，结果写入日志，不阻断启动。离线启动脚本（`launch-undo.bat`、`launch-undo.sh`、`launch-undo.command`）在启动 WebUI 前调用同一入口。设置 `DSH_UNDO_SKIP_ENV_CHECK=1` 可跳过整个自检。
 
 ## 使用
 
